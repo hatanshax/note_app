@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="ja" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Handwritten Canvas Note</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: none; /* 防止: モバイルでのスワイプスクロール */
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        /* キャンバス要素のカーソルスタイリング */
+        .cursor-pen { cursor: crosshair; }
+        .cursor-eraser { cursor: cell; }
+        .cursor-text { cursor: text; }
+        
+        /* カスタムスクロールバー */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        
+        /* カスタムカラーピッカー */
+        #customColor {
+            appearance: none;
+            -webkit-appearance: none;
+            padding: 0;
+            border: 0;
+            background: transparent;
+        }
+        #customColor::-webkit-color-swatch-wrapper { padding: 2px; }
+        #customColor::-webkit-color-swatch {
+            border: 2px solid #ffffff;
+            border-radius: 9999px;
+            box-shadow: 0 0 0 1px #cbd5e1;
+        }
+        #customColor::-moz-color-swatch {
+            border: 2px solid #ffffff;
+            border-radius: 9999px;
+            box-shadow: 0 0 0 1px #cbd5e1;
+        }
+        
+        /* ツールボタンのアクティブ状態 */
+        .tool-btn.active {
+            background-color: #3b82f6;
+            color: #ffffff;
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+        }
+
+        .bg-btn.active {
+            background-color: #2563eb;
+            border-color: #2563eb;
+            color: #ffffff;
+            box-shadow: 0 2px 5px rgba(37, 99, 235, 0.25);
+        }
+
+        /* アプリのダークモード */
+        body.dark-mode { background-color: #020617; }
+        body.dark-mode .theme-header,
+        body.dark-mode .theme-panel,
+        body.dark-mode .theme-modal { background-color: rgba(15, 23, 42, 0.97) !important; border-color: #334155 !important; }
+        body.dark-mode .theme-subpanel,
+        body.dark-mode .bg-slate-50,
+        body.dark-mode .bg-slate-100 { background-color: #1e293b !important; }
+        body.dark-mode .bg-white { background-color: #0f172a !important; }
+        body.dark-mode .border-slate-100,
+        body.dark-mode .border-slate-200,
+        body.dark-mode .border-slate-300 { border-color: #334155 !important; }
+        body.dark-mode .text-slate-800,
+        body.dark-mode .text-slate-700,
+        body.dark-mode .text-slate-600 { color: #e2e8f0 !important; }
+        body.dark-mode .text-slate-500,
+        body.dark-mode .text-slate-400 { color: #94a3b8 !important; }
+        body.dark-mode input,
+        body.dark-mode textarea { color: #f8fafc; }
+        body.dark-mode #canvasTextInput { background-color: rgba(15, 23, 42, 0.97) !important; }
+        body.dark-mode #autoInkCanvas,
+        body.canvas-dark-paper #autoInkCanvas { filter: invert(1); }
+    </style>
+</head>
+<body class="h-full bg-slate-100 flex flex-col overflow-hidden select-none">
+
+    <!-- トップヘッダー / ナビゲーションバー -->
+    <header class="theme-header bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between shadow-sm z-20">
+        <div class="flex items-center space-x-3">
+            <!-- ノート一覧モーダルを開くボタン -->
+            <button id="openNotesListBtn" class="bg-slate-100 hover:bg-slate-200 text-slate-700 p-2 rounded-xl transition flex items-center space-x-2" title="ノート一覧を開く">
+                <i class="fa-solid fa-book-bookmark text-blue-600 text-lg"></i>
+                <span class="text-xs font-semibold hidden md:inline">ノート一覧</span>
+            </button>
+
+            <button id="newNoteQuickBtn" class="bg-blue-50 hover:bg-blue-100 text-blue-600 p-2 rounded-xl transition text-xs font-semibold flex items-center space-x-1" title="新規ノートを作成">
+                <i class="fa-solid fa-plus"></i>
+                <span class="hidden md:inline">新規</span>
+            </button>
+
+            <div class="h-6 w-px bg-slate-200 mx-1"></div>
+
+            <div>
+                <input type="text" id="noteTitle" value="無題のノート" class="font-bold text-slate-800 text-base bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-slate-50 focus:outline-none px-1 py-0.5 rounded transition">
+                <div class="text-xs text-slate-400 flex items-center space-x-2">
+                    <span id="saveStatus"><i class="fa-solid fa-check text-green-500 mr-1"></i>保存済み</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ページ操作 & ズーム機能 -->
+        <div class="flex items-center space-x-2 bg-slate-100 p-1 rounded-xl">
+            <button id="prevPageBtn" class="p-2 hover:bg-white rounded-lg text-slate-600 transition disabled:opacity-30 disabled:hover:bg-transparent" title="前のページ">
+                <i class="fa-solid fa-chevron-left text-sm"></i>
+            </button>
+            <span id="pageIndicator" class="text-xs font-semibold text-slate-600 px-2">1 / 1</span>
+            <button id="nextPageBtn" class="p-2 hover:bg-white rounded-lg text-slate-600 transition disabled:opacity-30 disabled:hover:bg-transparent" title="次のページ">
+                <i class="fa-solid fa-chevron-right text-sm"></i>
+            </button>
+            <button id="addPageBtn" class="p-2 hover:bg-blue-500 hover:text-white rounded-lg text-slate-600 transition" title="新規ページ追加">
+                <i class="fa-solid fa-plus text-sm"></i>
+            </button>
+        </div>
+
+        <!-- アクションボタン（Undo/Redo/クリア/保存） -->
+        <div class="flex items-center space-x-1 sm:space-x-2">
+            <button id="undoBtn" class="p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition disabled:opacity-30" title="元に戻す (Ctrl+Z)">
+                <i class="fa-solid fa-arrow-rotate-left"></i>
+            </button>
+            <button id="redoBtn" class="p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition disabled:opacity-30" title="やり直す (Ctrl+Y)">
+                <i class="fa-solid fa-arrow-rotate-right"></i>
+            </button>
+            <div class="h-6 w-px bg-slate-200 mx-1"></div>
+            <button id="clearBtn" class="p-2.5 text-rose-500 hover:bg-rose-50 rounded-xl transition" title="全消去">
+                <i class="fa-solid fa-trash-can"></i>
+            </button>
+            <button id="themeToggleBtn" class="p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition flex items-center" title="ダークモードに切り替え" aria-label="表示モードを切り替え">
+                <i id="themeToggleIcon" class="fa-solid fa-moon"></i>
+                <span id="themeToggleLabel" class="hidden lg:inline ml-1 text-xs font-medium">ダーク</span>
+            </button>
+            <button id="headerExportDataBtn" class="p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition" title="全ノートのデータをJSONで保存">
+                <i class="fa-solid fa-file-export"></i>
+                <span class="hidden lg:inline ml-1 text-xs font-medium">データ保存</span>
+            </button>
+            <label class="p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer" title="保存したJSONデータをインポート">
+                <i class="fa-solid fa-file-import"></i>
+                <span class="hidden lg:inline ml-1 text-xs font-medium">インポート</span>
+                <input type="file" id="headerImportDataInput" accept="application/json,.json" class="hidden">
+            </label>
+            <button id="downloadBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-xl text-sm font-medium transition shadow-sm flex items-center space-x-1.5">
+                <i class="fa-solid fa-download"></i>
+                <span class="hidden sm:inline">画像保存</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- メインコンテンツエリア -->
+    <div class="flex-1 flex relative overflow-hidden">
+
+        <!-- 左側 floating ツールバー (メインツール) -->
+        <div class="theme-panel absolute left-4 top-4 z-10 bg-white/90 backdrop-blur-md p-1.5 rounded-2xl shadow-lg border border-slate-200/80 flex flex-col space-y-1.5">
+            <button data-tool="pen" class="tool-btn active p-3 rounded-xl text-slate-600 hover:bg-slate-100 transition relative group" title="ペン (P)">
+                <i class="fa-solid fa-pen text-lg block"></i>
+                <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition whitespace-nowrap z-30">ペン</span>
+            </button>
+            <button data-tool="highlighter" class="tool-btn p-3 rounded-xl text-slate-600 hover:bg-slate-100 transition relative group" title="蛍光ペン (H)">
+                <i class="fa-solid fa-highlighter text-lg block"></i>
+                <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition whitespace-nowrap z-30">蛍光ペン</span>
+            </button>
+            <button data-tool="eraser" class="tool-btn p-3 rounded-xl text-slate-600 hover:bg-slate-100 transition relative group" title="消しゴム (E)">
+                <i class="fa-solid fa-eraser text-lg block"></i>
+                <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition whitespace-nowrap z-30">消しゴム</span>
+            </button>
+            
+            <div class="w-8 h-px bg-slate-200 mx-auto my-1"></div>
+
+            <button data-tool="line" class="tool-btn p-3 rounded-xl text-slate-600 hover:bg-slate-100 transition relative group" title="直線">
+                <i class="fa-solid fa-slash text-lg block"></i>
+                <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition whitespace-nowrap z-30">直線</span>
+            </button>
+            <button data-tool="rect" class="tool-btn p-3 rounded-xl text-slate-600 hover:bg-slate-100 transition relative group" title="長方形">
+                <i class="fa-regular fa-square text-lg block"></i>
+                <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition whitespace-nowrap z-30">長方形</span>
+            </button>
+            <button data-tool="circle" class="tool-btn p-3 rounded-xl text-slate-600 hover:bg-slate-100 transition relative group" title="円">
+                <i class="fa-regular fa-circle text-lg block"></i>
+                <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition whitespace-nowrap z-30">円</span>
+            </button>
+            <button data-tool="text" class="tool-btn p-3 rounded-xl text-slate-600 hover:bg-slate-100 transition relative group" title="テキスト入力：配置場所をクリック (T)">
+                <i class="fa-solid fa-font text-lg block"></i>
+                <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition whitespace-nowrap z-30">テキスト</span>
+            </button>
+        </div>
+
+        <!-- 下部 floating プロパティバー (色・線の太さ・背景設定) -->
+        <div class="theme-panel absolute bottom-6 left-1/2 -translate-x-1/2 z-10 bg-white/95 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-slate-200/80 flex flex-wrap items-center gap-4 max-w-[95vw]">
+            
+            <!-- カスタムカラーパレット -->
+            <div class="flex items-center space-x-2" id="colorPalette">
+                <label for="customColor" class="text-xs text-slate-400 font-medium shrink-0">描画色:</label>
+                <input type="color" id="customColor" value="#1e293b" class="w-9 h-9 rounded-full cursor-pointer" title="カラーパレットを開く">
+                <span id="colorValue" class="text-xs font-mono font-medium text-slate-600 w-[4.5rem]">#1E293B</span>
+                <button id="resetDefaultColorBtn" class="px-2 py-1 text-xs font-medium rounded-lg border border-blue-200 text-blue-600 bg-blue-50 hover:bg-blue-100 transition" title="背景に合う既定色へ戻す">自動</button>
+            </div>
+
+            <div class="h-6 w-px bg-slate-200"></div>
+
+            <!-- 太さ調整 -->
+            <div class="flex items-center space-x-2">
+                <i class="fa-solid fa-circle text-[8px] text-slate-400"></i>
+                <input type="range" id="lineWidth" min="1" max="40" value="3" class="w-24 accent-blue-600 cursor-pointer">
+                <i class="fa-solid fa-circle text-base text-slate-600"></i>
+                <span id="widthValue" class="text-xs font-mono font-medium text-slate-600 w-6 text-right">3px</span>
+            </div>
+
+            <div class="h-6 w-px bg-slate-200"></div>
+
+            <!-- ノート用紙背景の選択 -->
+            <div class="flex items-center space-x-1 overflow-x-auto max-w-[300px] sm:max-w-none py-1">
+                <span class="text-xs text-slate-400 font-medium mr-1 shrink-0">背景:</span>
+                <button data-bg="grid" class="bg-btn active px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition shrink-0">方眼</button>
+                <button data-bg="ruled" class="bg-btn px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition shrink-0">罫線</button>
+                <button data-bg="dots" class="bg-btn px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition shrink-0">ドット</button>
+                <button data-bg="blank" class="bg-btn px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition shrink-0">白紙</button>
+                <button data-bg="dark" class="bg-btn px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition shrink-0">黒板</button>
+                <button data-bg="genko" class="bg-btn px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition shrink-0">原稿用紙</button>
+                <button data-bg="music" class="bg-btn px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition shrink-0">五線譜</button>
+                <button data-bg="english" class="bg-btn px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition shrink-0">英語4線</button>
+            </div>
+        </div>
+
+        <!-- 描画用キャンバスコンテナ -->
+        <div id="canvasContainer" class="w-full h-full relative cursor-pen overflow-hidden">
+            <canvas id="backgroundCanvas" class="absolute inset-0 block pointer-events-none" aria-hidden="true"></canvas>
+            <canvas id="autoInkCanvas" class="absolute inset-0 block pointer-events-none" aria-hidden="true"></canvas>
+            <canvas id="paintCanvas" class="absolute inset-0 block"></canvas>
+            
+            <!-- インラインテキスト入力用オーバーレイ -->
+            <textarea id="canvasTextInput" rows="1" placeholder="文字を入力（Ctrl/⌘ + Enterで確定）" class="hidden absolute z-30 min-w-64 min-h-10 resize-none overflow-hidden bg-white/95 border-2 border-blue-500 rounded-lg outline-none font-sans text-slate-800 px-2 py-1.5 shadow-lg" style="transform: translate(0, 0);"></textarea>
+        </div>
+    </div>
+
+    <!-- ノート管理モーダルダイアログ -->
+    <div id="notesModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="theme-modal bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+            <!-- モーダルヘッダー -->
+            <div class="theme-subpanel px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-book-open text-blue-600 text-xl"></i>
+                    <h2 class="text-lg font-bold text-slate-800">保存したノート一覧</h2>
+                </div>
+                <button id="closeNotesModalBtn" class="text-slate-400 hover:text-slate-600 p-2 rounded-lg transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- モーダルアクションバー -->
+            <div class="px-6 py-3 bg-white border-b border-slate-100 flex justify-between items-center flex-wrap gap-2">
+                <button id="modalCreateNoteBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm flex items-center space-x-2">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>新しいノートを作成</span>
+                </button>
+                <div class="flex items-center space-x-2">
+                    <button id="exportNotesBtn" class="text-slate-600 hover:bg-slate-100 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 transition flex items-center space-x-1">
+                        <i class="fa-solid fa-file-export"></i>
+                        <span>データ保存</span>
+                    </button>
+                    <label class="text-slate-600 hover:bg-slate-100 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 transition cursor-pointer flex items-center space-x-1">
+                        <i class="fa-solid fa-file-import"></i>
+                        <span>インポート</span>
+                        <input type="file" id="importNotesInput" accept="application/json,.json" class="hidden">
+                    </label>
+                </div>
+            </div>
+
+            <!-- ノートカードリスト -->
+            <div id="notesGrid" class="p-6 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                <!-- JSで動的に追加されるノートアイテム -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            // --- アプリケーションの状態構造 ---
+            const state = {
+                currentTool: 'pen',         // pen, highlighter, eraser, line, rect, circle, text
+                color: '#1e293b',
+                colorIsDefault: true,        // trueならモード・背景に合わせて黒/白を自動選択
+                uiMode: 'light',             // light, dark
+                lineWidth: 3,
+                bgType: 'grid',              // grid, ruled, dots, blank, dark, genko, music, english
+                pages: [],                   // 各ページのCanvasデータURL配列
+                currentPageIndex: 0,
+                history: [],                 // Undo/Redoスタック
+                historyStep: -1,
+                maxHistory: 20,
+                isDrawing: false,
+                startX: 0,
+                startY: 0,
+                snapshot: null,              // 図形描画プレビュー用の状態保存
+                currentStrokePoints: [],     // 蛍光ペンの重ね塗り防止用の軌跡
+                
+                // ノート管理機能用追加ステート
+                currentNoteId: null,
+                notesList: []
+            };
+
+            const STORAGE_KEY = 'handwritten_notes_data_v2';
+            const UI_MODE_KEY = 'handwritten_notes_ui_mode';
+            const BACKUP_VERSION = 1;
+            const VALID_BACKGROUNDS = new Set(['grid', 'ruled', 'dots', 'blank', 'dark', 'genko', 'music', 'english']);
+
+            // DOM要素の参照
+            const canvas = document.getElementById('paintCanvas');
+            const customCtx = canvas.getContext('2d');
+            let ctx = customCtx;
+            const autoInkCanvas = document.getElementById('autoInkCanvas');
+            const autoInkCtx = autoInkCanvas.getContext('2d');
+            const backgroundCanvas = document.getElementById('backgroundCanvas');
+            const bgCtx = backgroundCanvas.getContext('2d');
+            const container = document.getElementById('canvasContainer');
+            const textInput = document.getElementById('canvasTextInput');
+
+            function getDefaultDrawingColor() {
+                // 黒板、またはダークモードの用紙には白。それ以外には黒を使う
+                return (state.uiMode === 'dark' || state.bgType === 'dark') ? '#f8fafc' : '#0f172a';
+            }
+
+            function updateDrawingColor(color, isDefault = false) {
+                state.color = color;
+                state.colorIsDefault = isDefault;
+                document.getElementById('customColor').value = color;
+                document.getElementById('colorValue').innerText = color.toUpperCase();
+                document.getElementById('resetDefaultColorBtn').classList.toggle('ring-2', isDefault);
+                document.getElementById('resetDefaultColorBtn').classList.toggle('ring-blue-400', isDefault);
+                document.getElementById('resetDefaultColorBtn').setAttribute('aria-pressed', String(isDefault));
+            }
+
+            function applyUiMode(mode, persist = true) {
+                state.uiMode = mode === 'dark' ? 'dark' : 'light';
+                document.body.classList.toggle('dark-mode', state.uiMode === 'dark');
+                const isDark = state.uiMode === 'dark';
+                document.getElementById('themeToggleIcon').className = `fa-solid ${isDark ? 'fa-sun' : 'fa-moon'}`;
+                document.getElementById('themeToggleLabel').innerText = isDark ? 'ライト' : 'ダーク';
+                document.getElementById('themeToggleBtn').title = `${isDark ? 'ライト' : 'ダーク'}モードに切り替え`;
+                document.getElementById('themeToggleBtn').setAttribute('aria-pressed', String(isDark));
+                if (state.colorIsDefault) updateDrawingColor(getDefaultDrawingColor(), true);
+                renderBackground();
+                if (persist) localStorage.setItem(UI_MODE_KEY, state.uiMode);
+            }
+
+            // --- LocalStorage ノート保存/読み込みロジック ---
+            function loadAllNotesFromStorage() {
+                try {
+                    const raw = localStorage.getItem(STORAGE_KEY);
+                    if (raw) {
+                        state.notesList = JSON.parse(raw);
+                    }
+                } catch(e) {
+                    console.error("ノートデータの読み込み失敗:", e);
+                    state.notesList = [];
+                }
+
+                if (!state.notesList || state.notesList.length === 0) {
+                    // 初期デフォルトノート作成
+                    const defaultNote = {
+                        id: 'note_' + Date.now(),
+                        title: '無題のノート',
+                        bgType: 'grid',
+                        pages: [null],
+                        currentPageIndex: 0,
+                        updatedAt: Date.now()
+                    };
+                    state.notesList = [defaultNote];
+                    saveAllNotesToStorage();
+                }
+
+                // 最新のノートを開く
+                const lastNote = state.notesList[0];
+                loadNoteById(lastNote.id);
+            }
+
+            function saveAllNotesToStorage() {
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.notesList));
+                    const statusEl = document.getElementById('saveStatus');
+                    statusEl.innerHTML = '<i class="fa-solid fa-check text-green-500 mr-1"></i>自動保存済み';
+                } catch(e) {
+                    console.error("保存容量上限エラー:", e);
+                    const statusEl = document.getElementById('saveStatus');
+                    statusEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-amber-500 mr-1"></i>容量超過注意';
+                }
+            }
+
+            function syncCurrentNoteToMemory() {
+                if (!state.currentNoteId) return;
+                
+                // 現在のキャンバス描画を現在のページ配列に反映
+                saveCurrentPageData();
+
+                const index = state.notesList.findIndex(n => n.id === state.currentNoteId);
+                if (index !== -1) {
+                    state.notesList[index].title = document.getElementById('noteTitle').value || '無題のノート';
+                    state.notesList[index].bgType = state.bgType;
+                    state.notesList[index].pages = state.pages;
+                    state.notesList[index].currentPageIndex = state.currentPageIndex;
+                    state.notesList[index].updatedAt = Date.now();
+
+                    // 先頭（最新更新）に並び替え
+                    const updatedNote = state.notesList.splice(index, 1)[0];
+                    state.notesList.unshift(updatedNote);
+
+                    saveAllNotesToStorage();
+                }
+            }
+
+            function loadNoteById(noteId) {
+                const note = state.notesList.find(n => n.id === noteId);
+                if (!note) return;
+
+                state.currentNoteId = note.id;
+                document.getElementById('noteTitle').value = note.title;
+                state.bgType = note.bgType || 'grid';
+                state.pages = note.pages && note.pages.length > 0 ? note.pages : [null];
+                state.currentPageIndex = note.currentPageIndex || 0;
+                if (state.colorIsDefault) updateDrawingColor(getDefaultDrawingColor(), true);
+
+                // 背景UIボタンのアクティブ更新
+                document.querySelectorAll('.bg-btn').forEach(btn => {
+                    const isActive = btn.dataset.bg === state.bgType;
+                    btn.classList.toggle('active', isActive);
+                    btn.setAttribute('aria-pressed', String(isActive));
+                });
+
+                // 該当ページ読み込み
+                loadPageData(state.currentPageIndex);
+            }
+
+            function createNewNote(title = '無題のノート', bgType = 'grid') {
+                syncCurrentNoteToMemory();
+
+                const newNote = {
+                    id: 'note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                    title: title,
+                    bgType: bgType,
+                    pages: [null],
+                    currentPageIndex: 0,
+                    updatedAt: Date.now()
+                };
+
+                state.notesList.unshift(newNote);
+                saveAllNotesToStorage();
+                loadNoteById(newNote.id);
+            }
+
+            function deleteNote(noteId) {
+                if (state.notesList.length <= 1) {
+                    alert('最後のノートは削除できません。新規ノートを作成してから削除してください。');
+                    return;
+                }
+
+                if (!confirm('このノートを削除してもよろしいですか？')) return;
+
+                state.notesList = state.notesList.filter(n => n.id !== noteId);
+                saveAllNotesToStorage();
+
+                if (state.currentNoteId === noteId) {
+                    loadNoteById(state.notesList[0].id);
+                }
+                renderNotesGrid();
+            }
+
+            // --- キャンバスサイズの最適化 ---
+            function resizeCanvas() {
+                // カスタム色と自動色の筆跡レイヤーをそれぞれ退避
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                const tempAutoCanvas = document.createElement('canvas');
+                tempAutoCanvas.width = autoInkCanvas.width;
+                tempAutoCanvas.height = autoInkCanvas.height;
+                const tempAutoCtx = tempAutoCanvas.getContext('2d');
+                if (canvas.width > 0 && canvas.height > 0) {
+                    tempCtx.drawImage(canvas, 0, 0);
+                    tempAutoCtx.drawImage(autoInkCanvas, 0, 0);
+                }
+
+                // コンテナの実際のピクセルサイズに合わせる
+                canvas.width = container.clientWidth;
+                canvas.height = container.clientHeight;
+                autoInkCanvas.width = container.clientWidth;
+                autoInkCanvas.height = container.clientHeight;
+                backgroundCanvas.width = container.clientWidth;
+                backgroundCanvas.height = container.clientHeight;
+
+                // 背景再描画 & 透明な描画データ復元
+                renderBackground();
+                if (tempCanvas.width > 0 && tempCanvas.height > 0) {
+                    customCtx.drawImage(tempCanvas, 0, 0);
+                    autoInkCtx.drawImage(tempAutoCanvas, 0, 0);
+                }
+            }
+
+            // --- 背景パターン描画 ---
+            function renderBackgroundTo(targetCtx, w, h, bgType = state.bgType, uiMode = state.uiMode) {
+                const isDarkPaper = uiMode === 'dark' || bgType === 'dark';
+                const subtleLine = isDarkPaper ? '#334155' : '#e2e8f0';
+                const mediumLine = isDarkPaper ? '#64748b' : '#94a3b8';
+
+                // ベースクリア
+                targetCtx.clearRect(0, 0, w, h);
+                if (isDarkPaper) {
+                    targetCtx.fillStyle = '#1e293b'; // ダーク黒板色
+                    targetCtx.fillRect(0, 0, w, h);
+                } else {
+                    targetCtx.fillStyle = '#ffffff'; // ホワイトノート
+                    targetCtx.fillRect(0, 0, w, h);
+                }
+
+                targetCtx.save();
+                targetCtx.lineWidth = 1;
+
+                if (bgType === 'grid') {
+                    // 方眼紙
+                    targetCtx.strokeStyle = subtleLine;
+                    const gridSize = 25;
+                    for (let x = gridSize; x < w; x += gridSize) {
+                        targetCtx.beginPath();
+                        targetCtx.moveTo(x, 0);
+                        targetCtx.lineTo(x, h);
+                        targetCtx.stroke();
+                    }
+                    for (let y = gridSize; y < h; y += gridSize) {
+                        targetCtx.beginPath();
+                        targetCtx.moveTo(0, y);
+                        targetCtx.lineTo(w, y);
+                        targetCtx.stroke();
+                    }
+                } else if (bgType === 'ruled') {
+                    // 罫線
+                    targetCtx.strokeStyle = isDarkPaper ? '#475569' : '#cbd5e1';
+                    const lineHeight = 32;
+                    for (let y = lineHeight + 20; y < h; y += lineHeight) {
+                        targetCtx.beginPath();
+                        targetCtx.moveTo(40, y);
+                        targetCtx.lineTo(w - 40, y);
+                        targetCtx.stroke();
+                    }
+                    // 左側の赤いマージン線
+                    targetCtx.strokeStyle = isDarkPaper ? '#ef4444' : '#fca5a5';
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(70, 0);
+                    targetCtx.lineTo(70, h);
+                    targetCtx.stroke();
+                } else if (bgType === 'dots') {
+                    // ドット方眼
+                    targetCtx.fillStyle = mediumLine;
+                    const dotSpacing = 24;
+                    for (let x = dotSpacing; x < w; x += dotSpacing) {
+                        for (let y = dotSpacing; y < h; y += dotSpacing) {
+                            targetCtx.beginPath();
+                            targetCtx.arc(x, y, 1.2, 0, Math.PI * 2);
+                            targetCtx.fill();
+                        }
+                    }
+                } else if (bgType === 'genko') {
+                    // 原稿用紙風格子
+                    targetCtx.strokeStyle = isDarkPaper ? '#475569' : '#cbd5e1';
+                    const boxSize = 28;
+                    const gap = 6;
+                    const cols = Math.floor((w - 60) / (boxSize + gap));
+                    const rows = Math.floor((h - 60) / boxSize);
+                    
+                    for (let r = 0; r < rows; r++) {
+                        for (let c = 0; c < cols; c++) {
+                            const x = 30 + c * (boxSize + gap);
+                            const y = 30 + r * boxSize;
+                            targetCtx.strokeRect(x, y, boxSize, boxSize);
+                        }
+                    }
+                } else if (bgType === 'music') {
+                    // 五線譜
+                    targetCtx.strokeStyle = mediumLine;
+                    const lineGap = 10;
+                    const staffGap = 50;
+                    let currentY = 50;
+
+                    while (currentY + lineGap * 4 < h - 40) {
+                        for (let i = 0; i < 5; i++) {
+                            targetCtx.beginPath();
+                            targetCtx.moveTo(30, currentY + i * lineGap);
+                            targetCtx.lineTo(w - 30, currentY + i * lineGap);
+                            targetCtx.stroke();
+                        }
+                        currentY += lineGap * 4 + staffGap;
+                    }
+                } else if (bgType === 'english') {
+                    // 英語4線ノート
+                    const lineGap = 12;
+                    const groupGap = 40;
+                    let currentY = 50;
+
+                    while (currentY + lineGap * 3 < h - 40) {
+                        // 1本目 & 4本目: 青線, 2,3本目: 赤破線/実線
+                        for (let i = 0; i < 4; i++) {
+                            targetCtx.beginPath();
+                            if (i === 1 || i === 2) {
+                                targetCtx.strokeStyle = '#f87171';
+                            } else {
+                                targetCtx.strokeStyle = '#60a5fa';
+                            }
+                            targetCtx.moveTo(30, currentY + i * lineGap);
+                            targetCtx.lineTo(w - 30, currentY + i * lineGap);
+                            targetCtx.stroke();
+                        }
+                        currentY += lineGap * 3 + groupGap;
+                    }
+                }
+
+                targetCtx.restore();
+            }
+
+            function renderBackground() {
+                renderBackgroundTo(bgCtx, backgroundCanvas.width, backgroundCanvas.height);
+                document.body.classList.toggle('canvas-dark-paper', state.uiMode !== 'dark' && state.bgType === 'dark');
+            }
+
+            // --- 座標取得 helper ---
+            function getPointerPos(e) {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+
+                return {
+                    x: (clientX - rect.left) * scaleX,
+                    y: (clientY - rect.top) * scaleY
+                };
+            }
+
+            // --- 描画ロジック ---
+            function startDrawing(e) {
+                if (e.type === 'touchstart') {
+                    e.preventDefault();
+                }
+
+                // 既定色の内容はモード連動レイヤー、カスタム色は固定色レイヤーへ描く
+                ctx = state.colorIsDefault ? autoInkCtx : customCtx;
+
+                if (state.currentTool === 'text') {
+                    handleTextPlacement(e);
+                    return;
+                }
+
+                state.isDrawing = true;
+                const pos = getPointerPos(e);
+                state.startX = pos.x;
+                state.startY = pos.y;
+                state.currentStrokePoints = [pos];
+
+                state.snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+                applyToolStyle(ctx);
+
+                if (state.currentTool === 'eraser') {
+                    [customCtx, autoInkCtx].forEach(targetCtx => {
+                        applyToolStyle(targetCtx);
+                        targetCtx.beginPath();
+                        targetCtx.arc(pos.x, pos.y, Math.max(1, targetCtx.lineWidth / 2), 0, Math.PI * 2);
+                        targetCtx.fill();
+                        targetCtx.beginPath();
+                        targetCtx.moveTo(pos.x, pos.y);
+                    });
+                } else if (['pen', 'highlighter'].includes(state.currentTool)) {
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, Math.max(1, ctx.lineWidth / 2), 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(pos.x, pos.y);
+                }
+            }
+
+            function applyToolStyle(targetCtx = ctx) {
+                const drawingColor = state.colorIsDefault ? '#000000' : state.color;
+                targetCtx.strokeStyle = drawingColor;
+                targetCtx.fillStyle = drawingColor;
+                targetCtx.lineWidth = state.lineWidth;
+                targetCtx.lineCap = 'round';
+                targetCtx.lineJoin = 'round';
+                targetCtx.globalAlpha = 1.0;
+                targetCtx.globalCompositeOperation = 'source-over';
+
+                if (state.currentTool === 'highlighter') {
+                    // 下の筆跡や背景が十分見える透明度
+                    targetCtx.globalAlpha = 0.18;
+                    targetCtx.lineWidth = state.lineWidth * 3;
+                } else if (state.currentTool === 'eraser') {
+                    // 筆跡レイヤーを透明化し、背面の背景レイヤーは変更しない
+                    targetCtx.globalCompositeOperation = 'destination-out';
+                    targetCtx.strokeStyle = '#000000';
+                    targetCtx.fillStyle = '#000000';
+                    targetCtx.lineWidth = state.lineWidth * 5;
+                }
+            }
+
+            function draw(e) {
+                if (!state.isDrawing) return;
+                if (e.cancelable) e.preventDefault();
+
+                const pos = getPointerPos(e);
+
+                if (state.currentTool === 'highlighter') {
+                    // stroke()のたびに過去の軌跡を重ねないよう、開始時の状態から毎回1度だけ描く
+                    state.currentStrokePoints.push(pos);
+                    ctx.putImageData(state.snapshot, 0, 0);
+                    applyToolStyle();
+                    ctx.beginPath();
+                    ctx.moveTo(state.currentStrokePoints[0].x, state.currentStrokePoints[0].y);
+                    for (let i = 1; i < state.currentStrokePoints.length; i++) {
+                        ctx.lineTo(state.currentStrokePoints[i].x, state.currentStrokePoints[i].y);
+                    }
+                    ctx.stroke();
+                } else if (state.currentTool === 'eraser') {
+                    [customCtx, autoInkCtx].forEach(targetCtx => {
+                        targetCtx.lineTo(pos.x, pos.y);
+                        targetCtx.stroke();
+                    });
+                } else if (state.currentTool === 'pen') {
+                    ctx.lineTo(pos.x, pos.y);
+                    ctx.stroke();
+                } else {
+                    ctx.putImageData(state.snapshot, 0, 0);
+                    applyToolStyle();
+
+                    ctx.beginPath();
+                    if (state.currentTool === 'line') {
+                        ctx.moveTo(state.startX, state.startY);
+                        ctx.lineTo(pos.x, pos.y);
+                        ctx.stroke();
+                    } else if (state.currentTool === 'rect') {
+                        const width = pos.x - state.startX;
+                        const height = pos.y - state.startY;
+                        ctx.strokeRect(state.startX, state.startY, width, height);
+                    } else if (state.currentTool === 'circle') {
+                        const radius = Math.hypot(pos.x - state.startX, pos.y - state.startY);
+                        ctx.arc(state.startX, state.startY, radius, 0, 2 * Math.PI);
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            function stopDrawing() {
+                if (!state.isDrawing) return;
+                state.isDrawing = false;
+                [customCtx, autoInkCtx].forEach(targetCtx => {
+                    targetCtx.closePath();
+                    targetCtx.globalAlpha = 1.0;
+                    targetCtx.globalCompositeOperation = 'source-over';
+                });
+                state.currentStrokePoints = [];
+                saveHistory();
+                syncCurrentNoteToMemory(); // 自動同期
+            }
+
+            // --- テキスト入力処理 ---
+            function handleTextPlacement(e) {
+                const pos = getPointerPos(e);
+                const fontSize = Math.max(14, state.lineWidth * 5);
+                const textColor = state.color;
+                const textIsDefault = state.colorIsDefault;
+                const inputLeft = Math.min(pos.x, Math.max(0, container.clientWidth - 280));
+                const inputTop = Math.min(pos.y, Math.max(0, container.clientHeight - 80));
+                let cancelled = false;
+
+                textInput.value = '';
+                textInput.style.left = `${inputLeft}px`;
+                textInput.style.top = `${inputTop}px`;
+                textInput.style.height = 'auto';
+                textInput.style.fontSize = `${fontSize}px`;
+                textInput.style.lineHeight = '1.25';
+                textInput.style.color = textColor;
+                textInput.classList.remove('hidden');
+                textInput.focus();
+
+                const commitText = () => {
+                    const text = textInput.value.trimEnd();
+                    if (!cancelled && text.trim()) {
+                        const lineHeight = fontSize * 1.25;
+                        ctx.save();
+                        ctx.globalAlpha = 1;
+                        ctx.globalCompositeOperation = 'source-over';
+                        ctx.font = `${fontSize}px 'Inter', sans-serif`;
+                        ctx.textBaseline = 'top';
+                        ctx.fillStyle = textIsDefault ? '#000000' : textColor;
+                        text.split('\n').forEach((line, index) => {
+                            ctx.fillText(line, pos.x, pos.y + index * lineHeight);
+                        });
+                        ctx.restore();
+                        saveHistory();
+                        syncCurrentNoteToMemory();
+                    }
+                    textInput.value = '';
+                    textInput.classList.add('hidden');
+                    textInput.oninput = null;
+                    textInput.onkeydown = null;
+                };
+
+                textInput.addEventListener('blur', commitText, { once: true });
+                textInput.onkeydown = (k) => {
+                    if (k.key === 'Escape') {
+                        k.preventDefault();
+                        cancelled = true;
+                        textInput.blur();
+                    } else if (k.key === 'Enter' && (k.ctrlKey || k.metaKey)) {
+                        k.preventDefault();
+                        textInput.blur();
+                    }
+                };
+                textInput.oninput = () => {
+                    textInput.style.height = 'auto';
+                    textInput.style.height = `${Math.min(textInput.scrollHeight, 180)}px`;
+                };
+            }
+
+            // --- 履歴 (Undo / Redo) 管理 ---
+            function captureInkState() {
+                return {
+                    autoInk: autoInkCanvas.toDataURL(),
+                    customInk: canvas.toDataURL()
+                };
+            }
+
+            function loadImageDataUrl(dataUrl, targetCtx) {
+                if (!dataUrl) return Promise.resolve();
+                return new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        targetCtx.drawImage(img, 0, 0);
+                        resolve();
+                    };
+                    img.onerror = reject;
+                    img.src = dataUrl;
+                });
+            }
+
+            function loadInkState(inkState) {
+                customCtx.clearRect(0, 0, canvas.width, canvas.height);
+                autoInkCtx.clearRect(0, 0, autoInkCanvas.width, autoInkCanvas.height);
+
+                if (typeof inkState === 'string') {
+                    // 旧形式は色の意味を判別できないため固定色レイヤーとして読み込む
+                    return new Promise((resolve, reject) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            drawStoredPage(img);
+                            resolve();
+                        };
+                        img.onerror = reject;
+                        img.src = inkState;
+                    });
+                }
+
+                if (inkState && typeof inkState === 'object') {
+                    return Promise.all([
+                        loadImageDataUrl(inkState.autoInk, autoInkCtx),
+                        loadImageDataUrl(inkState.customInk, customCtx)
+                    ]);
+                }
+                return Promise.resolve();
+            }
+
+            function saveHistory() {
+                if (state.historyStep < state.history.length - 1) {
+                    state.history = state.history.slice(0, state.historyStep + 1);
+                }
+                
+                state.history.push(captureInkState());
+                if (state.history.length > state.maxHistory) {
+                    state.history.shift();
+                } else {
+                    state.historyStep++;
+                }
+                updateHistoryButtons();
+            }
+
+            function undo() {
+                if (state.historyStep > 0) {
+                    state.historyStep--;
+                    loadHistoryState();
+                } else if (state.historyStep === 0) {
+                    state.historyStep = -1;
+                    customCtx.clearRect(0, 0, canvas.width, canvas.height);
+                    autoInkCtx.clearRect(0, 0, autoInkCanvas.width, autoInkCanvas.height);
+                    updateHistoryButtons();
+                    syncCurrentNoteToMemory();
+                }
+            }
+
+            function redo() {
+                if (state.historyStep < state.history.length - 1) {
+                    state.historyStep++;
+                    loadHistoryState();
+                }
+            }
+
+            function loadHistoryState() {
+                loadInkState(state.history[state.historyStep]).then(() => {
+                    updateHistoryButtons();
+                    syncCurrentNoteToMemory();
+                }).catch(error => console.error('履歴の読み込み失敗:', error));
+            }
+
+            function updateHistoryButtons() {
+                document.getElementById('undoBtn').disabled = (state.historyStep < 0);
+                document.getElementById('redoBtn').disabled = (state.historyStep >= state.history.length - 1);
+            }
+
+            // --- ページ機能の管理 ---
+            function saveCurrentPageData() {
+                state.pages[state.currentPageIndex] = captureInkState();
+            }
+
+            function loadPageData(index) {
+                state.currentPageIndex = index;
+                renderBackground();
+                customCtx.clearRect(0, 0, canvas.width, canvas.height);
+                autoInkCtx.clearRect(0, 0, autoInkCanvas.width, autoInkCanvas.height);
+                state.history = [];
+                state.historyStep = -1;
+
+                if (state.pages[index]) {
+                    loadInkState(state.pages[index]).then(() => {
+                        saveHistory();
+                        syncCurrentNoteToMemory();
+                    }).catch(error => console.error('ページの読み込み失敗:', error));
+                } else {
+                    saveHistory();
+                    syncCurrentNoteToMemory();
+                }
+                updatePageUI();
+            }
+
+            // v2以前は背景と筆跡が1枚の画像だったため、背景と同じ画素を透明化して移行する
+            function drawStoredPage(img) {
+                const legacyCanvas = document.createElement('canvas');
+                legacyCanvas.width = img.naturalWidth;
+                legacyCanvas.height = img.naturalHeight;
+                const legacyCtx = legacyCanvas.getContext('2d', { willReadFrequently: true });
+                legacyCtx.drawImage(img, 0, 0);
+
+                const stored = legacyCtx.getImageData(0, 0, legacyCanvas.width, legacyCanvas.height);
+                let looksFlattened = true;
+                for (let i = 3; i < stored.data.length; i += 4) {
+                    if (stored.data[i] < 255) {
+                        looksFlattened = false;
+                        break;
+                    }
+                }
+                if (looksFlattened) {
+                    const expectedCanvas = document.createElement('canvas');
+                    expectedCanvas.width = legacyCanvas.width;
+                    expectedCanvas.height = legacyCanvas.height;
+                    const expectedCtx = expectedCanvas.getContext('2d', { willReadFrequently: true });
+                    const storedIsDark = stored.data[0] + stored.data[1] + stored.data[2] < 384;
+                    renderBackgroundTo(
+                        expectedCtx,
+                        expectedCanvas.width,
+                        expectedCanvas.height,
+                        state.bgType,
+                        storedIsDark ? 'dark' : 'light'
+                    );
+
+                    const expected = expectedCtx.getImageData(0, 0, expectedCanvas.width, expectedCanvas.height);
+                    for (let i = 0; i < stored.data.length; i += 4) {
+                        if (stored.data[i] === expected.data[i] &&
+                            stored.data[i + 1] === expected.data[i + 1] &&
+                            stored.data[i + 2] === expected.data[i + 2]) {
+                            stored.data[i + 3] = 0;
+                        }
+                    }
+                    legacyCtx.clearRect(0, 0, legacyCanvas.width, legacyCanvas.height);
+                }
+
+                // 旧形式で使われていた既定色を、可能な範囲でモード連動レイヤーへ移行
+                const migratedAuto = legacyCtx.createImageData(legacyCanvas.width, legacyCanvas.height);
+                const legacyDefaultColors = new Set(['30,41,59', '15,23,42', '248,250,252']);
+                for (let i = 0; i < stored.data.length; i += 4) {
+                    const rgbKey = `${stored.data[i]},${stored.data[i + 1]},${stored.data[i + 2]}`;
+                    if (stored.data[i + 3] > 0 && legacyDefaultColors.has(rgbKey)) {
+                        migratedAuto.data[i] = 0;
+                        migratedAuto.data[i + 1] = 0;
+                        migratedAuto.data[i + 2] = 0;
+                        migratedAuto.data[i + 3] = stored.data[i + 3];
+                        stored.data[i + 3] = 0;
+                    }
+                }
+                legacyCtx.clearRect(0, 0, legacyCanvas.width, legacyCanvas.height);
+                legacyCtx.putImageData(stored, 0, 0);
+                const migratedAutoCanvas = document.createElement('canvas');
+                migratedAutoCanvas.width = legacyCanvas.width;
+                migratedAutoCanvas.height = legacyCanvas.height;
+                migratedAutoCanvas.getContext('2d').putImageData(migratedAuto, 0, 0);
+
+                customCtx.drawImage(legacyCanvas, 0, 0);
+                autoInkCtx.drawImage(migratedAutoCanvas, 0, 0);
+            }
+
+            function updatePageUI() {
+                document.getElementById('pageIndicator').innerText = `${state.currentPageIndex + 1} / ${state.pages.length}`;
+                document.getElementById('prevPageBtn').disabled = (state.currentPageIndex === 0);
+                document.getElementById('nextPageBtn').disabled = (state.currentPageIndex === state.pages.length - 1);
+            }
+
+            // --- ノート一覧UI描画 ---
+            function renderNotesGrid() {
+                const grid = document.getElementById('notesGrid');
+                grid.innerHTML = '';
+
+                state.notesList.forEach(note => {
+                    const isSelected = note.id === state.currentNoteId;
+                    const dateStr = new Date(note.updatedAt).toLocaleString('ja-JP', {
+                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                    });
+
+                    const card = document.createElement('div');
+                    card.className = `p-4 rounded-xl border transition cursor-pointer flex flex-col justify-between ${
+                        isSelected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-500/20' : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
+                    }`;
+
+                    card.innerHTML = `
+                        <div>
+                            <div class="flex items-start justify-between mb-2">
+                                <h3 class="font-bold text-slate-800 text-sm truncate pr-2">${note.title || '無題のノート'}</h3>
+                                <span class="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full uppercase">${note.bgType || 'grid'}</span>
+                            </div>
+                            <div class="text-xs text-slate-400 flex items-center space-x-3 mb-3">
+                                <span><i class="fa-regular fa-file-lines mr-1"></i>${note.pages ? note.pages.length : 1}ページ</span>
+                                <span><i class="fa-regular fa-clock mr-1"></i>${dateStr}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between pt-2 border-t border-slate-100 mt-2">
+                            <span class="text-xs text-blue-600 font-semibold">${isSelected ? '開いています' : '開く'}</span>
+                            <button class="delete-note-btn text-rose-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition" title="ノート削除">
+                                <i class="fa-regular fa-trash-can text-sm"></i>
+                            </button>
+                        </div>
+                    `;
+
+                    card.addEventListener('click', (e) => {
+                        if (e.target.closest('.delete-note-btn')) return; // 削除ボタン押し時は開かない
+                        syncCurrentNoteToMemory();
+                        loadNoteById(note.id);
+                        closeNotesModal();
+                    });
+
+                    card.querySelector('.delete-note-btn').addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        deleteNote(note.id);
+                    });
+
+                    grid.appendChild(card);
+                });
+            }
+
+            function openNotesModal() {
+                syncCurrentNoteToMemory();
+                renderNotesGrid();
+                document.getElementById('notesModal').classList.remove('hidden');
+            }
+
+            function closeNotesModal() {
+                document.getElementById('notesModal').classList.add('hidden');
+            }
+
+            // --- 全ノートのデータ保存 / インポート ---
+            function exportNotesData() {
+                syncCurrentNoteToMemory();
+                const backup = {
+                    version: BACKUP_VERSION,
+                    exportedAt: new Date().toISOString(),
+                    notes: state.notesList
+                };
+                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `handwritten_notes_backup_${Date.now()}.json`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 0);
+            }
+
+            function normalizeImportedNotes(parsed) {
+                // 以前の配列形式のバックアップにも対応
+                const notes = Array.isArray(parsed) ? parsed : parsed && parsed.notes;
+                if (!Array.isArray(notes) || notes.length === 0) {
+                    throw new Error('ノートデータが見つかりません');
+                }
+
+                return notes.map((note, index) => {
+                    if (!note || typeof note !== 'object') {
+                        throw new Error(`${index + 1}件目のノート形式が不正です`);
+                    }
+                    const pages = Array.isArray(note.pages) && note.pages.length > 0
+                        ? note.pages.map(page => {
+                            if (typeof page === 'string' || page === null) return page;
+                            if (page && typeof page === 'object') {
+                                return {
+                                    autoInk: typeof page.autoInk === 'string' ? page.autoInk : null,
+                                    customInk: typeof page.customInk === 'string' ? page.customInk : null
+                                };
+                            }
+                            return null;
+                        })
+                        : [null];
+                    const requestedIndex = Number.isInteger(note.currentPageIndex) ? note.currentPageIndex : 0;
+                    return {
+                        id: typeof note.id === 'string' && note.id ? note.id : `note_${Date.now()}_${index}`,
+                        title: typeof note.title === 'string' && note.title.trim() ? note.title : '無題のノート',
+                        bgType: VALID_BACKGROUNDS.has(note.bgType) ? note.bgType : 'grid',
+                        pages,
+                        currentPageIndex: Math.max(0, Math.min(requestedIndex, pages.length - 1)),
+                        updatedAt: Number.isFinite(note.updatedAt) ? note.updatedAt : Date.now()
+                    };
+                });
+            }
+
+            function importNotesData(file, input) {
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const importedNotes = normalizeImportedNotes(JSON.parse(event.target.result));
+                        if (!confirm('現在のノートを、インポートしたデータで置き換えますか？')) return;
+                        state.notesList = importedNotes;
+                        saveAllNotesToStorage();
+                        loadNoteById(state.notesList[0].id);
+                        renderNotesGrid();
+                        alert(`${state.notesList.length}件のノートをインポートしました。`);
+                    } catch(err) {
+                        console.error('インポート失敗:', err);
+                        alert('データをインポートできませんでした。正しいJSONバックアップを選択してください。');
+                    } finally {
+                        // 同じファイルを続けて選択できるようにする
+                        input.value = '';
+                    }
+                };
+                reader.onerror = () => {
+                    alert('ファイルを読み込めませんでした。');
+                    input.value = '';
+                };
+                reader.readAsText(file);
+            }
+
+            // --- イベントリスナー設定 ---
+
+            // マウス & タッチイベント (キャンバス)
+            canvas.addEventListener('mousedown', startDrawing);
+            window.addEventListener('mousemove', draw);
+            window.addEventListener('mouseup', stopDrawing);
+
+            canvas.addEventListener('touchstart', startDrawing, { passive: false });
+            window.addEventListener('touchmove', draw, { passive: false });
+            window.addEventListener('touchend', stopDrawing);
+
+            // ツール切り替えボタン
+            document.querySelectorAll('.tool-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+                    const targetBtn = e.currentTarget;
+                    targetBtn.classList.add('active');
+                    state.currentTool = targetBtn.dataset.tool;
+
+                    container.className = `w-full h-full relative overflow-hidden ${
+                        state.currentTool === 'eraser' ? 'cursor-eraser' : 
+                        state.currentTool === 'text' ? 'cursor-text' : 'cursor-pen'
+                    }`;
+                });
+            });
+
+            // カスタムカラーピッカー
+            document.getElementById('customColor').addEventListener('input', (e) => {
+                updateDrawingColor(e.target.value, false);
+            });
+
+            document.getElementById('resetDefaultColorBtn').addEventListener('click', () => {
+                updateDrawingColor(getDefaultDrawingColor(), true);
+            });
+
+            document.getElementById('themeToggleBtn').addEventListener('click', () => {
+                applyUiMode(state.uiMode === 'dark' ? 'light' : 'dark');
+                syncCurrentNoteToMemory();
+            });
+
+            // 太さスライダー
+            const widthInput = document.getElementById('lineWidth');
+            const widthValue = document.getElementById('widthValue');
+            widthInput.addEventListener('input', (e) => {
+                state.lineWidth = parseInt(e.target.value);
+                widthValue.innerText = `${state.lineWidth}px`;
+            });
+
+            // ノート背景の変更
+            document.querySelectorAll('.bg-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.bg-btn').forEach(b => {
+                        b.classList.remove('active');
+                        b.setAttribute('aria-pressed', 'false');
+                    });
+                    e.currentTarget.classList.add('active');
+                    e.currentTarget.setAttribute('aria-pressed', 'true');
+                    state.bgType = e.currentTarget.dataset.bg;
+                    if (state.colorIsDefault) updateDrawingColor(getDefaultDrawingColor(), true);
+
+                    // 背景レイヤーだけを再描画し、筆跡には触れない
+                    renderBackground();
+                    syncCurrentNoteToMemory();
+                });
+            });
+
+            // ノートタイトル編集イベント
+            document.getElementById('noteTitle').addEventListener('input', () => {
+                syncCurrentNoteToMemory();
+            });
+
+            // モーダル関連イベント
+            document.getElementById('openNotesListBtn').addEventListener('click', openNotesModal);
+            document.getElementById('closeNotesModalBtn').addEventListener('click', closeNotesModal);
+            document.getElementById('modalCreateNoteBtn').addEventListener('click', () => {
+                createNewNote();
+                closeNotesModal();
+            });
+            document.getElementById('newNoteQuickBtn').addEventListener('click', () => {
+                createNewNote();
+            });
+
+            // ノートバックアップ (JSON形式でのデータ保存/インポート)
+            document.getElementById('exportNotesBtn').addEventListener('click', exportNotesData);
+            document.getElementById('headerExportDataBtn').addEventListener('click', exportNotesData);
+            ['importNotesInput', 'headerImportDataInput'].forEach(id => {
+                const input = document.getElementById(id);
+                input.addEventListener('change', () => importNotesData(input.files[0], input));
+            });
+
+            // Undo / Redo ボタン
+            document.getElementById('undoBtn').addEventListener('click', undo);
+            document.getElementById('redoBtn').addEventListener('click', redo);
+
+            // 全消去
+            document.getElementById('clearBtn').addEventListener('click', () => {
+                customCtx.clearRect(0, 0, canvas.width, canvas.height);
+                autoInkCtx.clearRect(0, 0, autoInkCanvas.width, autoInkCanvas.height);
+                saveHistory();
+                syncCurrentNoteToMemory();
+            });
+
+            // ページ切替
+            document.getElementById('prevPageBtn').addEventListener('click', () => {
+                if (state.currentPageIndex > 0) {
+                    saveCurrentPageData();
+                    loadPageData(state.currentPageIndex - 1);
+                }
+            });
+
+            document.getElementById('nextPageBtn').addEventListener('click', () => {
+                if (state.currentPageIndex < state.pages.length - 1) {
+                    saveCurrentPageData();
+                    loadPageData(state.currentPageIndex + 1);
+                }
+            });
+
+            document.getElementById('addPageBtn').addEventListener('click', () => {
+                saveCurrentPageData();
+                state.pages.push(null);
+                loadPageData(state.pages.length - 1);
+            });
+
+            // 画像ダウンロード
+            document.getElementById('downloadBtn').addEventListener('click', () => {
+                const title = document.getElementById('noteTitle').value || 'note';
+                const exportCanvas = document.createElement('canvas');
+                exportCanvas.width = canvas.width;
+                exportCanvas.height = canvas.height;
+                const exportCtx = exportCanvas.getContext('2d');
+                exportCtx.drawImage(backgroundCanvas, 0, 0);
+                exportCtx.filter = (state.uiMode === 'dark' || state.bgType === 'dark') ? 'invert(1)' : 'none';
+                exportCtx.drawImage(autoInkCanvas, 0, 0);
+                exportCtx.filter = 'none';
+                exportCtx.drawImage(canvas, 0, 0);
+                const link = document.createElement('a');
+                link.download = `${title}_page${state.currentPageIndex + 1}.png`;
+                link.href = exportCanvas.toDataURL('image/png');
+                link.click();
+            });
+
+            // ショートカットキー対応
+            window.addEventListener('keydown', (e) => {
+                if (e.target.tagName === 'INPUT') return;
+
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+                    e.preventDefault();
+                    undo();
+                } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+                    e.preventDefault();
+                    redo();
+                } else if (e.key.toLowerCase() === 'p') {
+                    document.querySelector('[data-tool="pen"]').click();
+                } else if (e.key.toLowerCase() === 'h') {
+                    document.querySelector('[data-tool="highlighter"]').click();
+                } else if (e.key.toLowerCase() === 'e') {
+                    document.querySelector('[data-tool="eraser"]').click();
+                } else if (e.key.toLowerCase() === 't') {
+                    document.querySelector('[data-tool="text"]').click();
+                }
+            });
+
+            // ウィンドウサイズ変更対応
+            window.addEventListener('resize', resizeCanvas);
+
+            // --- アプリケーション起動 ---
+            applyUiMode(localStorage.getItem(UI_MODE_KEY) || 'light', false);
+            resizeCanvas();
+            loadAllNotesFromStorage();
+        };
+    </script>
+</body>
+</html>

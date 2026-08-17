@@ -242,11 +242,22 @@
 
             <!-- 太さ調整 -->
             <div class="flex items-center space-x-2">
-                <span class="text-xs text-slate-400 font-medium shrink-0">線/文字:</span>
+                <span class="text-xs text-slate-400 font-medium shrink-0">線:</span>
                 <i class="fa-solid fa-circle text-[8px] text-slate-400"></i>
                 <input type="range" id="lineWidth" min="1" max="40" value="3" class="w-24 accent-blue-600 cursor-pointer">
                 <i class="fa-solid fa-circle text-base text-slate-600"></i>
                 <span id="widthValue" class="text-xs font-mono font-medium text-slate-600 w-6 text-right">3px</span>
+            </div>
+
+            <div class="h-6 w-px bg-slate-200"></div>
+
+            <!-- 文字専用サイズ -->
+            <div class="flex items-center space-x-2">
+                <span class="text-xs text-slate-400 font-medium shrink-0">文字:</span>
+                <i class="fa-solid fa-font text-xs text-slate-400"></i>
+                <input type="range" id="textSize" min="10" max="96" value="24" class="w-24 accent-violet-500 cursor-pointer">
+                <i class="fa-solid fa-font text-lg text-slate-600"></i>
+                <span id="textSizeValue" class="text-xs font-mono font-medium text-slate-600 w-8 text-right">24px</span>
             </div>
 
             <div class="h-6 w-px bg-slate-200"></div>
@@ -337,6 +348,7 @@
                 colorIsDefault: true,        // trueならモード・背景に合わせて黒/白を自動選択
                 uiMode: 'light',             // light, dark
                 lineWidth: 3,
+                textSize: 24,
                 eraserWidth: 24,
                 toolBeforeRightErase: null,
                 bgType: 'grid',              // grid, ruled, dots, blank, dark, genko, music, english
@@ -969,7 +981,7 @@
             // --- テキスト入力処理 ---
             function handleTextPlacement(e) {
                 const pos = getPointerPos(e);
-                const fontSize = Math.max(14, state.lineWidth * 5);
+                const fontSize = state.textSize;
                 const textColor = state.color;
                 const textIsDefault = state.colorIsDefault;
                 const inputLeft = Math.min(pos.x, Math.max(0, container.clientWidth - 280));
@@ -1435,6 +1447,13 @@
             widthInput.addEventListener('input', (e) => {
                 state.lineWidth = parseInt(e.target.value);
                 widthValue.innerText = `${state.lineWidth}px`;
+            });
+
+            const textSizeInput = document.getElementById('textSize');
+            const textSizeValue = document.getElementById('textSizeValue');
+            textSizeInput.addEventListener('input', (e) => {
+                state.textSize = parseInt(e.target.value);
+                textSizeValue.innerText = `${state.textSize}px`;
             });
 
             const eraserWidthInput = document.getElementById('eraserWidth');

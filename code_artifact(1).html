@@ -21,6 +21,17 @@
         .cursor-pen { cursor: crosshair; }
         .cursor-eraser { cursor: cell; }
         .cursor-text { cursor: text; }
+        .cursor-select { cursor: crosshair; }
+
+        #selectionOverlay {
+            border: 2px dashed #2563eb;
+            background: rgba(59, 130, 246, 0.08);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8) inset;
+        }
+        #selectionOverlay.moving {
+            cursor: move;
+            background: rgba(59, 130, 246, 0.14);
+        }
         
         /* カスタムスクロールバー */
         ::-webkit-scrollbar {
@@ -201,6 +212,10 @@
                 <i class="fa-solid fa-font text-lg block"></i>
                 <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition whitespace-nowrap z-30">テキスト</span>
             </button>
+            <button data-tool="select" class="tool-btn p-3 rounded-xl text-slate-600 hover:bg-slate-100 transition relative group" title="範囲選択・移動 (S)">
+                <i class="fa-solid fa-object-group text-lg block"></i>
+                <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition whitespace-nowrap z-30">範囲選択・移動</span>
+            </button>
         </div>
 
         <!-- 下部 floating プロパティバー (色・線の太さ・背景設定) -->
@@ -260,6 +275,7 @@
             <canvas id="backgroundCanvas" class="absolute inset-0 block pointer-events-none" aria-hidden="true"></canvas>
             <canvas id="autoInkCanvas" class="absolute inset-0 block pointer-events-none" aria-hidden="true"></canvas>
             <canvas id="paintCanvas" class="absolute inset-0 block"></canvas>
+            <div id="selectionOverlay" class="hidden absolute z-20 pointer-events-none" aria-hidden="true"></div>
             
             <!-- インラインテキスト入力用オーバーレイ -->
             <textarea id="canvasTextInput" rows="1" placeholder="文字を入力（Ctrl/⌘ + Enterで確定）" class="hidden absolute z-30 min-w-64 min-h-10 resize-none overflow-hidden bg-white/95 border-2 border-blue-500 rounded-lg outline-none font-sans text-slate-800 px-2 py-1.5 shadow-lg" style="transform: translate(0, 0);"></textarea>
@@ -328,6 +344,18 @@
                 startY: 0,
                 snapshot: null,              // 図形描画プレビュー用の状態保存
                 currentStrokePoints: [],     // 蛍光ペンの重ね塗り防止用の軌跡
+                selection: {
+                    active: false,
+                    mode: null,               // selecting, moving
+                    x: 0, y: 0, width: 0, height: 0,
+                    originalX: 0, originalY: 0,
+                    previewX: 0, previewY: 0,
+                    snapshotCustom: null,
+                    snapshotAuto: null,
+                    cropCustom: null,
+                    cropAuto: null,
+                    moved: false
+                },
                 
                 // ノート管理機能用追加ステート
                 currentNoteId: null,
@@ -349,6 +377,7 @@
             const bgCtx = backgroundCanvas.getContext('2d');
             const container = document.getElementById('canvasContainer');
             const textInput = document.getElementById('canvasTextInput');
+            const selectionOverlay = document.getElementById('selectionOverlay');
 
             function getDefaultDrawingColor() {
                 // 黒板、またはダークモードの用紙には白。それ以外には黒を使う
@@ -499,6 +528,7 @@
 
             // --- キャンバスサイズの最適化 ---
             function resizeCanvas() {
+                clearSelection();
                 // カスタム色と自動色の筆跡レイヤーをそれぞれ退避
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = canvas.width;
@@ -668,6 +698,127 @@
                 };
             }
 
+            // --- 矩形範囲の選択・移動 ---
+            function updateSelectionOverlay(x, y, width, height, moving = false) {
+                selectionOverlay.style.left = `${x}px`;
+                selectionOverlay.style.top = `${y}px`;
+                selectionOverlay.style.width = `${width}px`;
+                selectionOverlay.style.height = `${height}px`;
+                selectionOverlay.classList.remove('hidden');
+                selectionOverlay.classList.toggle('moving', moving);
+            }
+
+            function clearSelection() {
+                state.selection.active = false;
+                state.selection.mode = null;
+                state.selection.cropCustom = null;
+                state.selection.cropAuto = null;
+                selectionOverlay.classList.add('hidden');
+                selectionOverlay.classList.remove('moving');
+            }
+
+            function isInsideSelection(pos) {
+                const s = state.selection;
+                return s.active && pos.x >= s.x && pos.x <= s.x + s.width &&
+                    pos.y >= s.y && pos.y <= s.y + s.height;
+            }
+
+            function createSelectionCrop(sourceCanvas, x, y, width, height) {
+                const crop = document.createElement('canvas');
+                crop.width = width;
+                crop.height = height;
+                crop.getContext('2d').drawImage(sourceCanvas, x, y, width, height, 0, 0, width, height);
+                return crop;
+            }
+
+            function startSelection(pos) {
+                const s = state.selection;
+                state.isDrawing = true;
+                s.moved = false;
+
+                if (isInsideSelection(pos)) {
+                    s.mode = 'moving';
+                    s.originalX = s.x;
+                    s.originalY = s.y;
+                    s.previewX = s.x;
+                    s.previewY = s.y;
+                    state.startX = pos.x;
+                    state.startY = pos.y;
+                    s.snapshotCustom = customCtx.getImageData(0, 0, canvas.width, canvas.height);
+                    s.snapshotAuto = autoInkCtx.getImageData(0, 0, autoInkCanvas.width, autoInkCanvas.height);
+                    s.cropCustom = createSelectionCrop(canvas, s.x, s.y, s.width, s.height);
+                    s.cropAuto = createSelectionCrop(autoInkCanvas, s.x, s.y, s.width, s.height);
+                    updateSelectionOverlay(s.x, s.y, s.width, s.height, true);
+                } else {
+                    clearSelection();
+                    s.mode = 'selecting';
+                    state.startX = pos.x;
+                    state.startY = pos.y;
+                    s.x = pos.x;
+                    s.y = pos.y;
+                    s.width = 0;
+                    s.height = 0;
+                    updateSelectionOverlay(pos.x, pos.y, 0, 0);
+                }
+            }
+
+            function updateSelection(pos) {
+                const s = state.selection;
+                if (s.mode === 'selecting') {
+                    s.x = Math.max(0, Math.min(state.startX, pos.x));
+                    s.y = Math.max(0, Math.min(state.startY, pos.y));
+                    s.width = Math.min(canvas.width, Math.max(state.startX, pos.x)) - s.x;
+                    s.height = Math.min(canvas.height, Math.max(state.startY, pos.y)) - s.y;
+                    updateSelectionOverlay(s.x, s.y, s.width, s.height);
+                } else if (s.mode === 'moving') {
+                    const maxX = Math.max(0, canvas.width - s.width);
+                    const maxY = Math.max(0, canvas.height - s.height);
+                    s.previewX = Math.round(Math.max(0, Math.min(maxX, s.originalX + pos.x - state.startX)));
+                    s.previewY = Math.round(Math.max(0, Math.min(maxY, s.originalY + pos.y - state.startY)));
+                    s.moved = s.previewX !== s.originalX || s.previewY !== s.originalY;
+
+                    customCtx.putImageData(s.snapshotCustom, 0, 0);
+                    autoInkCtx.putImageData(s.snapshotAuto, 0, 0);
+                    customCtx.clearRect(s.originalX, s.originalY, s.width, s.height);
+                    autoInkCtx.clearRect(s.originalX, s.originalY, s.width, s.height);
+                    customCtx.drawImage(s.cropCustom, s.previewX, s.previewY);
+                    autoInkCtx.drawImage(s.cropAuto, s.previewX, s.previewY);
+                    updateSelectionOverlay(s.previewX, s.previewY, s.width, s.height, true);
+                }
+            }
+
+            function finishSelection() {
+                const s = state.selection;
+                state.isDrawing = false;
+                if (s.mode === 'selecting') {
+                    s.x = Math.round(s.x);
+                    s.y = Math.round(s.y);
+                    s.width = Math.round(s.width);
+                    s.height = Math.round(s.height);
+                    if (s.width >= 4 && s.height >= 4) {
+                        s.active = true;
+                        updateSelectionOverlay(s.x, s.y, s.width, s.height);
+                    } else {
+                        clearSelection();
+                    }
+                } else if (s.mode === 'moving') {
+                    s.x = s.previewX;
+                    s.y = s.previewY;
+                    s.active = true;
+                    updateSelectionOverlay(s.x, s.y, s.width, s.height);
+                    if (s.moved) {
+                        saveHistory();
+                        syncCurrentNoteToMemory();
+                    }
+                }
+                s.mode = null;
+                s.snapshotCustom = null;
+                s.snapshotAuto = null;
+                s.cropCustom = null;
+                s.cropAuto = null;
+                selectionOverlay.classList.remove('moving');
+            }
+
             // --- 描画ロジック ---
             function startDrawing(e) {
                 if (e.type === 'mousedown' && e.button !== 0 && e.button !== 2) return;
@@ -680,6 +831,11 @@
 
                 if (state.currentTool === 'text') {
                     handleTextPlacement(e);
+                    return;
+                }
+
+                if (state.currentTool === 'select') {
+                    startSelection(getPointerPos(e));
                     return;
                 }
 
@@ -741,6 +897,11 @@
 
                 const pos = getPointerPos(e);
 
+                if (state.selection.mode) {
+                    updateSelection(pos);
+                    return;
+                }
+
                 if (state.currentTool === 'highlighter') {
                     // stroke()のたびに過去の軌跡を重ねないよう、開始時の状態から毎回1度だけ描く
                     state.currentStrokePoints.push(pos);
@@ -782,6 +943,10 @@
             }
 
             function stopDrawing() {
+                if (state.selection.mode) {
+                    finishSelection();
+                    return;
+                }
                 if (!state.isDrawing) return;
                 state.isDrawing = false;
                 [customCtx, autoInkCtx].forEach(targetCtx => {
@@ -876,6 +1041,7 @@
             }
 
             function loadInkState(inkState) {
+                clearSelection();
                 customCtx.clearRect(0, 0, canvas.width, canvas.height);
                 autoInkCtx.clearRect(0, 0, autoInkCanvas.width, autoInkCanvas.height);
 
@@ -916,6 +1082,7 @@
             }
 
             function undo() {
+                clearSelection();
                 if (state.historyStep > 0) {
                     state.historyStep--;
                     loadHistoryState();
@@ -1188,13 +1355,15 @@
             // --- イベントリスナー設定 ---
 
             function activateTool(tool) {
+                if (tool !== 'select') clearSelection();
                 state.currentTool = tool;
                 document.querySelectorAll('.tool-btn').forEach(btn => {
                     btn.classList.toggle('active', btn.dataset.tool === tool);
                 });
                 container.className = `w-full h-full relative overflow-hidden ${
                     tool === 'eraser' ? 'cursor-eraser' :
-                    tool === 'text' ? 'cursor-text' : 'cursor-pen'
+                    tool === 'text' ? 'cursor-text' :
+                    tool === 'select' ? 'cursor-select' : 'cursor-pen'
                 }`;
             }
 
@@ -1311,6 +1480,7 @@
 
             // 全消去
             document.getElementById('clearBtn').addEventListener('click', () => {
+                clearSelection();
                 customCtx.clearRect(0, 0, canvas.width, canvas.height);
                 autoInkCtx.clearRect(0, 0, autoInkCanvas.width, autoInkCanvas.height);
                 saveHistory();
@@ -1358,7 +1528,7 @@
 
             // ショートカットキー対応
             window.addEventListener('keydown', (e) => {
-                if (e.target.tagName === 'INPUT') return;
+                if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
 
                 if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
                     e.preventDefault();
@@ -1374,6 +1544,8 @@
                     document.querySelector('[data-tool="eraser"]').click();
                 } else if (e.key.toLowerCase() === 't') {
                     document.querySelector('[data-tool="text"]').click();
+                } else if (e.key.toLowerCase() === 's') {
+                    document.querySelector('[data-tool="select"]').click();
                 }
             });
 

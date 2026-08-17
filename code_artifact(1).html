@@ -292,6 +292,7 @@
             <canvas id="backgroundCanvas" class="absolute inset-0 block pointer-events-none" aria-hidden="true"></canvas>
             <canvas id="autoInkCanvas" class="absolute inset-0 block pointer-events-none" aria-hidden="true"></canvas>
             <canvas id="paintCanvas" class="absolute inset-0 block"></canvas>
+            <canvas id="textCanvas" class="absolute inset-0 block pointer-events-none" aria-hidden="true"></canvas>
             <div id="selectionOverlay" class="hidden absolute z-20 pointer-events-none" aria-hidden="true"></div>
             
             <!-- インラインテキスト入力用オーバーレイ -->
@@ -372,8 +373,12 @@
                     snapshotAuto: null,
                     cropCustom: null,
                     cropAuto: null,
+                    selectedTextIds: [],
+                    textOriginalPositions: [],
                     moved: false
                 },
+                textObjects: [],             // 後から編集できるテキストオブジェクト
+                selectedTextId: null,
                 
                 // ノート管理機能用追加ステート
                 currentNoteId: null,
@@ -382,7 +387,7 @@
 
             const STORAGE_KEY = 'handwritten_notes_data_v2';
             const UI_MODE_KEY = 'handwritten_notes_ui_mode';
-            const BACKUP_VERSION = 1;
+            const BACKUP_VERSION = 2;
             const VALID_BACKGROUNDS = new Set(['grid', 'ruled', 'dots', 'blank', 'dark', 'genko', 'music', 'english']);
 
             // DOM要素の参照
@@ -391,6 +396,8 @@
             let ctx = customCtx;
             const autoInkCanvas = document.getElementById('autoInkCanvas');
             const autoInkCtx = autoInkCanvas.getContext('2d');
+            const textCanvas = document.getElementById('textCanvas');
+            const textCtx = textCanvas.getContext('2d');
             const backgroundCanvas = document.getElementById('backgroundCanvas');
             const bgCtx = backgroundCanvas.getContext('2d');
             const container = document.getElementById('canvasContainer');
@@ -566,6 +573,8 @@
                 canvas.height = container.clientHeight;
                 autoInkCanvas.width = container.clientWidth;
                 autoInkCanvas.height = container.clientHeight;
+                textCanvas.width = container.clientWidth;
+                textCanvas.height = container.clientHeight;
                 backgroundCanvas.width = container.clientWidth;
                 backgroundCanvas.height = container.clientHeight;
 
@@ -575,6 +584,7 @@
                     customCtx.drawImage(tempCanvas, 0, 0);
                     autoInkCtx.drawImage(tempAutoCanvas, 0, 0);
                 }
+                renderTextObjects();
             }
 
             // --- 背景パターン描画 ---
@@ -699,6 +709,82 @@
             function renderBackground() {
                 renderBackgroundTo(bgCtx, backgroundCanvas.width, backgroundCanvas.height);
                 document.body.classList.toggle('canvas-dark-paper', state.uiMode !== 'dark' && state.bgType === 'dark');
+                renderTextObjects();
+            }
+
+            // --- 編集可能テキストオブジェクト ---
+            function getTextObjectColor(textObject) {
+                if (!textObject.colorIsDefault) return textObject.color;
+                return (state.uiMode === 'dark' || state.bgType === 'dark') ? '#f8fafc' : '#0f172a';
+            }
+
+            function getTextBounds(textObject) {
+                const size = textObject.size || 24;
+                const lineHeight = size * 1.25;
+                const lines = String(textObject.text || '').split('\n');
+                textCtx.save();
+                textCtx.font = `${size}px 'Inter', sans-serif`;
+                const width = Math.max(1, ...lines.map(line => textCtx.measureText(line || ' ').width));
+                textCtx.restore();
+                return {
+                    x: textObject.x,
+                    y: textObject.y,
+                    width,
+                    height: Math.max(lineHeight, lines.length * lineHeight)
+                };
+            }
+
+            function renderTextObjects() {
+                if (!textCanvas.width || !textCanvas.height) return;
+                textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+                state.textObjects.forEach(textObject => {
+                    const size = textObject.size || 24;
+                    const lineHeight = size * 1.25;
+                    textCtx.save();
+                    textCtx.globalAlpha = 1;
+                    textCtx.font = `${size}px 'Inter', sans-serif`;
+                    textCtx.textBaseline = 'top';
+                    textCtx.fillStyle = getTextObjectColor(textObject);
+                    String(textObject.text || '').split('\n').forEach((line, index) => {
+                        textCtx.fillText(line, textObject.x, textObject.y + index * lineHeight);
+                    });
+                    textCtx.restore();
+                });
+            }
+
+            function findTextObjectAt(pos) {
+                for (let i = state.textObjects.length - 1; i >= 0; i--) {
+                    const bounds = getTextBounds(state.textObjects[i]);
+                    if (pos.x >= bounds.x && pos.x <= bounds.x + bounds.width &&
+                        pos.y >= bounds.y && pos.y <= bounds.y + bounds.height) {
+                        return state.textObjects[i];
+                    }
+                }
+                return null;
+            }
+
+            function eraseTextObjectsAt(pos) {
+                const radius = state.eraserWidth / 2;
+                const previousLength = state.textObjects.length;
+                state.textObjects = state.textObjects.filter(textObject => {
+                    const bounds = getTextBounds(textObject);
+                    const closestX = Math.max(bounds.x, Math.min(pos.x, bounds.x + bounds.width));
+                    const closestY = Math.max(bounds.y, Math.min(pos.y, bounds.y + bounds.height));
+                    return Math.hypot(pos.x - closestX, pos.y - closestY) > radius;
+                });
+                if (state.textObjects.length !== previousLength) {
+                    state.selectedTextId = null;
+                    renderTextObjects();
+                }
+            }
+
+            function showSelectedTextOutline(textObject) {
+                if (!textObject) {
+                    selectionOverlay.classList.add('hidden');
+                    return;
+                }
+                const bounds = getTextBounds(textObject);
+                updateSelectionOverlay(bounds.x - 3, bounds.y - 3, bounds.width + 6, bounds.height + 6);
             }
 
             // --- 座標取得 helper ---
@@ -751,6 +837,7 @@
 
             function startSelection(pos) {
                 const s = state.selection;
+                state.selectedTextId = null;
                 state.isDrawing = true;
                 s.moved = false;
 
@@ -766,6 +853,16 @@
                     s.snapshotAuto = autoInkCtx.getImageData(0, 0, autoInkCanvas.width, autoInkCanvas.height);
                     s.cropCustom = createSelectionCrop(canvas, s.x, s.y, s.width, s.height);
                     s.cropAuto = createSelectionCrop(autoInkCanvas, s.x, s.y, s.width, s.height);
+                    s.selectedTextIds = state.textObjects.filter(textObject => {
+                        const bounds = getTextBounds(textObject);
+                        const centerX = bounds.x + bounds.width / 2;
+                        const centerY = bounds.y + bounds.height / 2;
+                        return centerX >= s.x && centerX <= s.x + s.width &&
+                            centerY >= s.y && centerY <= s.y + s.height;
+                    }).map(textObject => textObject.id);
+                    s.textOriginalPositions = state.textObjects
+                        .filter(textObject => s.selectedTextIds.includes(textObject.id))
+                        .map(textObject => ({ id: textObject.id, x: textObject.x, y: textObject.y }));
                     updateSelectionOverlay(s.x, s.y, s.width, s.height, true);
                 } else {
                     clearSelection();
@@ -801,6 +898,16 @@
                     autoInkCtx.clearRect(s.originalX, s.originalY, s.width, s.height);
                     customCtx.drawImage(s.cropCustom, s.previewX, s.previewY);
                     autoInkCtx.drawImage(s.cropAuto, s.previewX, s.previewY);
+                    const deltaX = s.previewX - s.originalX;
+                    const deltaY = s.previewY - s.originalY;
+                    s.textOriginalPositions.forEach(original => {
+                        const textObject = state.textObjects.find(item => item.id === original.id);
+                        if (textObject) {
+                            textObject.x = original.x + deltaX;
+                            textObject.y = original.y + deltaY;
+                        }
+                    });
+                    renderTextObjects();
                     updateSelectionOverlay(s.previewX, s.previewY, s.width, s.height, true);
                 }
             }
@@ -834,6 +941,8 @@
                 s.snapshotAuto = null;
                 s.cropCustom = null;
                 s.cropAuto = null;
+                s.selectedTextIds = [];
+                s.textOriginalPositions = [];
                 selectionOverlay.classList.remove('moving');
             }
 
@@ -869,6 +978,7 @@
                 applyToolStyle(ctx);
 
                 if (state.currentTool === 'eraser') {
+                    eraseTextObjectsAt(pos);
                     [customCtx, autoInkCtx].forEach(targetCtx => {
                         applyToolStyle(targetCtx);
                         targetCtx.beginPath();
@@ -933,6 +1043,7 @@
                     }
                     ctx.stroke();
                 } else if (state.currentTool === 'eraser') {
+                    eraseTextObjectsAt(pos);
                     [customCtx, autoInkCtx].forEach(targetCtx => {
                         targetCtx.lineTo(pos.x, pos.y);
                         targetCtx.stroke();
@@ -981,14 +1092,21 @@
             // --- テキスト入力処理 ---
             function handleTextPlacement(e) {
                 const pos = getPointerPos(e);
-                const fontSize = state.textSize;
-                const textColor = state.color;
-                const textIsDefault = state.colorIsDefault;
-                const inputLeft = Math.min(pos.x, Math.max(0, container.clientWidth - 280));
-                const inputTop = Math.min(pos.y, Math.max(0, container.clientHeight - 80));
+                const editingText = findTextObjectAt(pos);
+                if (!editingText) selectionOverlay.classList.add('hidden');
+                const fontSize = editingText ? editingText.size : state.textSize;
+                const textColor = editingText ? getTextObjectColor(editingText) : state.color;
+                const textX = editingText ? editingText.x : pos.x;
+                const textY = editingText ? editingText.y : pos.y;
+                const inputLeft = Math.min(textX, Math.max(0, container.clientWidth - 280));
+                const inputTop = Math.min(textY, Math.max(0, container.clientHeight - 80));
                 let cancelled = false;
 
-                textInput.value = '';
+                state.selectedTextId = editingText ? editingText.id : null;
+                state.textSize = fontSize;
+                document.getElementById('textSize').value = fontSize;
+                document.getElementById('textSizeValue').innerText = `${fontSize}px`;
+                textInput.value = editingText ? editingText.text : '';
                 textInput.style.left = `${inputLeft}px`;
                 textInput.style.top = `${inputTop}px`;
                 textInput.style.height = 'auto';
@@ -1005,20 +1123,35 @@
 
                 const commitText = () => {
                     const text = textInput.value.trimEnd();
-                    if (!cancelled && text.trim()) {
-                        const lineHeight = fontSize * 1.25;
-                        ctx.save();
-                        ctx.globalAlpha = 1;
-                        ctx.globalCompositeOperation = 'source-over';
-                        ctx.font = `${fontSize}px 'Inter', sans-serif`;
-                        ctx.textBaseline = 'top';
-                        ctx.fillStyle = textIsDefault ? '#000000' : textColor;
-                        text.split('\n').forEach((line, index) => {
-                            ctx.fillText(line, pos.x, pos.y + index * lineHeight);
-                        });
-                        ctx.restore();
+                    if (!cancelled) {
+                        if (editingText) {
+                            if (text.trim()) {
+                                editingText.text = text;
+                                editingText.size = fontSize;
+                                state.selectedTextId = editingText.id;
+                            } else {
+                                state.textObjects = state.textObjects.filter(item => item.id !== editingText.id);
+                                state.selectedTextId = null;
+                            }
+                        } else if (text.trim()) {
+                            const newText = {
+                                id: `text_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                                text,
+                                x: textX,
+                                y: textY,
+                                size: fontSize,
+                                color: state.color,
+                                colorIsDefault: state.colorIsDefault
+                            };
+                            state.textObjects.push(newText);
+                            state.selectedTextId = newText.id;
+                        }
+                        renderTextObjects();
+                        showSelectedTextOutline(state.textObjects.find(item => item.id === state.selectedTextId));
                         saveHistory();
                         syncCurrentNoteToMemory();
+                    } else if (editingText) {
+                        showSelectedTextOutline(editingText);
                     }
                     textInput.value = '';
                     textInput.classList.add('hidden');
@@ -1047,7 +1180,8 @@
             function captureInkState() {
                 return {
                     autoInk: autoInkCanvas.toDataURL(),
-                    customInk: canvas.toDataURL()
+                    customInk: canvas.toDataURL(),
+                    texts: state.textObjects.map(textObject => ({ ...textObject }))
                 };
             }
 
@@ -1066,8 +1200,11 @@
 
             function loadInkState(inkState) {
                 clearSelection();
+                state.selectedTextId = null;
+                state.textObjects = [];
                 customCtx.clearRect(0, 0, canvas.width, canvas.height);
                 autoInkCtx.clearRect(0, 0, autoInkCanvas.width, autoInkCanvas.height);
+                textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
 
                 if (typeof inkState === 'string') {
                     // 旧形式は色の意味を判別できないため固定色レイヤーとして読み込む
@@ -1083,6 +1220,10 @@
                 }
 
                 if (inkState && typeof inkState === 'object') {
+                    state.textObjects = Array.isArray(inkState.texts)
+                        ? inkState.texts.map(textObject => ({ ...textObject }))
+                        : [];
+                    renderTextObjects();
                     return Promise.all([
                         loadImageDataUrl(inkState.autoInk, autoInkCtx),
                         loadImageDataUrl(inkState.customInk, customCtx)
@@ -1114,6 +1255,9 @@
                     state.historyStep = -1;
                     customCtx.clearRect(0, 0, canvas.width, canvas.height);
                     autoInkCtx.clearRect(0, 0, autoInkCanvas.width, autoInkCanvas.height);
+                    textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+                    state.textObjects = [];
+                    state.selectedTextId = null;
                     updateHistoryButtons();
                     syncCurrentNoteToMemory();
                 }
@@ -1148,6 +1292,9 @@
                 renderBackground();
                 customCtx.clearRect(0, 0, canvas.width, canvas.height);
                 autoInkCtx.clearRect(0, 0, autoInkCanvas.width, autoInkCanvas.height);
+                textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+                state.textObjects = [];
+                state.selectedTextId = null;
                 state.history = [];
                 state.historyStep = -1;
 
@@ -1331,7 +1478,18 @@
                             if (page && typeof page === 'object') {
                                 return {
                                     autoInk: typeof page.autoInk === 'string' ? page.autoInk : null,
-                                    customInk: typeof page.customInk === 'string' ? page.customInk : null
+                                    customInk: typeof page.customInk === 'string' ? page.customInk : null,
+                                    texts: Array.isArray(page.texts) ? page.texts
+                                        .filter(item => item && typeof item.text === 'string')
+                                        .map((item, textIndex) => ({
+                                            id: typeof item.id === 'string' ? item.id : `text_import_${index}_${textIndex}`,
+                                            text: item.text,
+                                            x: Number.isFinite(item.x) ? item.x : 0,
+                                            y: Number.isFinite(item.y) ? item.y : 0,
+                                            size: Number.isFinite(item.size) ? Math.max(10, Math.min(96, item.size)) : 24,
+                                            color: typeof item.color === 'string' ? item.color : '#0f172a',
+                                            colorIsDefault: item.colorIsDefault !== false
+                                        })) : []
                                 };
                             }
                             return null;
@@ -1380,6 +1538,7 @@
 
             function activateTool(tool) {
                 if (tool !== 'select') clearSelection();
+                if (tool !== 'text') state.selectedTextId = null;
                 state.currentTool = tool;
                 document.querySelectorAll('.tool-btn').forEach(btn => {
                     btn.classList.toggle('active', btn.dataset.tool === tool);
@@ -1454,6 +1613,18 @@
             textSizeInput.addEventListener('input', (e) => {
                 state.textSize = parseInt(e.target.value);
                 textSizeValue.innerText = `${state.textSize}px`;
+                const selectedText = state.textObjects.find(item => item.id === state.selectedTextId);
+                if (selectedText) {
+                    selectedText.size = state.textSize;
+                    renderTextObjects();
+                    showSelectedTextOutline(selectedText);
+                }
+            });
+            textSizeInput.addEventListener('change', () => {
+                if (state.textObjects.some(item => item.id === state.selectedTextId)) {
+                    saveHistory();
+                    syncCurrentNoteToMemory();
+                }
             });
 
             const eraserWidthInput = document.getElementById('eraserWidth');
@@ -1514,6 +1685,9 @@
                 clearSelection();
                 customCtx.clearRect(0, 0, canvas.width, canvas.height);
                 autoInkCtx.clearRect(0, 0, autoInkCanvas.width, autoInkCanvas.height);
+                textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+                state.textObjects = [];
+                state.selectedTextId = null;
                 saveHistory();
                 syncCurrentNoteToMemory();
             });
@@ -1551,6 +1725,7 @@
                 exportCtx.drawImage(autoInkCanvas, 0, 0);
                 exportCtx.filter = 'none';
                 exportCtx.drawImage(canvas, 0, 0);
+                exportCtx.drawImage(textCanvas, 0, 0);
                 const link = document.createElement('a');
                 link.download = `${title}_page${state.currentPageIndex + 1}.png`;
                 link.href = exportCanvas.toDataURL('image/png');

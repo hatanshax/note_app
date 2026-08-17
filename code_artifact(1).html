@@ -32,6 +32,12 @@
             cursor: move;
             background: rgba(59, 130, 246, 0.14);
         }
+
+        #canvasTextInput {
+            user-select: text;
+            -webkit-user-select: text;
+            touch-action: manipulation;
+        }
         
         /* カスタムスクロールバー */
         ::-webkit-scrollbar {
@@ -830,6 +836,7 @@
                 ctx = state.colorIsDefault ? autoInkCtx : customCtx;
 
                 if (state.currentTool === 'text') {
+                    if (e.cancelable) e.preventDefault();
                     handleTextPlacement(e);
                     return;
                 }
@@ -977,7 +984,12 @@
                 textInput.style.lineHeight = '1.25';
                 textInput.style.color = textColor;
                 textInput.classList.remove('hidden');
-                textInput.focus();
+                // mousedown本来のフォーカス処理が終わった後で入力欄へフォーカスする
+                requestAnimationFrame(() => {
+                    if (!textInput.classList.contains('hidden')) {
+                        textInput.focus({ preventScroll: true });
+                    }
+                });
 
                 const commitText = () => {
                     const text = textInput.value.trimEnd();

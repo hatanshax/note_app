@@ -208,10 +208,13 @@
             
             <!-- カスタムカラーパレット -->
             <div class="flex items-center space-x-2" id="colorPalette">
-                <label for="customColor" class="text-xs text-slate-400 font-medium shrink-0">描画色:</label>
+                <label for="colorChoice" class="text-xs text-slate-400 font-medium shrink-0">描画色:</label>
+                <select id="colorChoice" class="text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer" title="デフォルト色またはカスタム色を選択">
+                    <option value="default">デフォルト（自動）</option>
+                    <option value="custom">カスタムカラー…</option>
+                </select>
                 <input type="color" id="customColor" value="#1e293b" class="w-9 h-9 rounded-full cursor-pointer" title="カラーパレットを開く">
                 <span id="colorValue" class="text-xs font-mono font-medium text-slate-600 w-[4.5rem]">#1E293B</span>
-                <button id="resetDefaultColorBtn" class="px-2 py-1 text-xs font-medium rounded-lg border border-blue-200 text-blue-600 bg-blue-50 hover:bg-blue-100 transition" title="背景に合う既定色へ戻す">自動</button>
             </div>
 
             <div class="h-6 w-px bg-slate-200"></div>
@@ -343,9 +346,7 @@
                 state.colorIsDefault = isDefault;
                 document.getElementById('customColor').value = color;
                 document.getElementById('colorValue').innerText = color.toUpperCase();
-                document.getElementById('resetDefaultColorBtn').classList.toggle('ring-2', isDefault);
-                document.getElementById('resetDefaultColorBtn').classList.toggle('ring-blue-400', isDefault);
-                document.getElementById('resetDefaultColorBtn').setAttribute('aria-pressed', String(isDefault));
+                document.getElementById('colorChoice').value = isDefault ? 'default' : 'custom';
             }
 
             function applyUiMode(mode, persist = true) {
@@ -1200,8 +1201,13 @@
                 updateDrawingColor(e.target.value, false);
             });
 
-            document.getElementById('resetDefaultColorBtn').addEventListener('click', () => {
-                updateDrawingColor(getDefaultDrawingColor(), true);
+            document.getElementById('colorChoice').addEventListener('change', (e) => {
+                if (e.target.value === 'default') {
+                    updateDrawingColor(getDefaultDrawingColor(), true);
+                } else {
+                    updateDrawingColor(document.getElementById('customColor').value, false);
+                    document.getElementById('customColor').click();
+                }
             });
 
             document.getElementById('themeToggleBtn').addEventListener('click', () => {

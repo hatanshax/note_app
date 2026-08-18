@@ -2,7 +2,7 @@
 Version=1.0
 Type=Application
 Name=Note App
-Name[ja]=ノートアプリ
+Name[ja]=Note App
 Comment=Open the handwritten note application
 Comment[ja]=手書きノートアプリを開きます
 Exec=xdg-open "/home/pneuma-ubuntu/my_apps/note_app/code_artifact(1).html"

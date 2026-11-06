@@ -553,6 +553,14 @@
                         <input type="checkbox" id="pomoAutoStart" checked class="accent-blue-600 w-4 h-4">
                         <span>次のフェーズを自動的に開始する</span>
                     </label>
+                    <div class="flex items-center space-x-2 mt-3">
+                        <i class="fa-solid fa-volume-low text-xs text-slate-400"></i>
+                        <input type="range" id="pomoVolume" min="0" max="100" value="30" class="flex-1 accent-blue-600 cursor-pointer" title="アラームの音量（ポモドーロ・タイマー共通）" aria-label="アラームの音量">
+                        <span id="pomoVolumeValue" class="text-xs font-mono font-medium text-slate-600 w-9 text-right">30%</span>
+                        <button id="pomoVolumeTestBtn" class="text-xs font-medium text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 transition shrink-0" title="現在の音量でアラームを試聴">
+                            <i class="fa-solid fa-music pr-1"></i>試聴
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -646,6 +654,7 @@
                     remaining: 25 * 60,
                     workMin: 25, breakMin: 5, longMin: 15,
                     autoStart: true,
+                    volume: 0.3,             // アラーム音量 0〜1（ポモドーロ・タイマー共通）
                     today: '',              // 集中完了数を数えている日
                     completedToday: 0,
                     workCycle: 0            // 長い休憩判定用の集中完了回数
@@ -2709,7 +2718,7 @@
                 const p = state.pomodoro;
                 localStorage.setItem(POMODORO_STORAGE_KEY, JSON.stringify({
                     workMin: p.workMin, breakMin: p.breakMin, longMin: p.longMin,
-                    autoStart: p.autoStart, today: p.today,
+                    autoStart: p.autoStart, volume: p.volume, today: p.today,
                     completedToday: p.completedToday, workCycle: p.workCycle
                 }));
             }
@@ -2742,6 +2751,8 @@
                         p.breakMin = clampNumber(parsed.breakMin, 1, 60, p.breakMin);
                         p.longMin = clampNumber(parsed.longMin, 1, 60, p.longMin);
                         p.autoStart = parsed.autoStart !== false;
+                        p.volume = (typeof parsed.volume === 'number' && Number.isFinite(parsed.volume) && parsed.volume >= 0 && parsed.volume <= 1)
+                            ? parsed.volume : 0.3;
                         p.today = typeof parsed.today === 'string' ? parsed.today : '';
                         p.completedToday = clampNumber(parsed.completedToday, 0, 9999, 0);
                         p.workCycle = clampNumber(parsed.workCycle, 0, 9999, 0);
@@ -2768,6 +2779,8 @@
                 try {
                     primeAlarmAudio();
                     if (!alarmCtx) return;
+                    const volume = Math.min(1, Math.max(0, state.pomodoro.volume || 0));
+                    if (volume <= 0.0001) return; // 音量0では鳴らさない
                     const start = alarmCtx.currentTime + 0.05;
                     [0, 0.3, 0.6].forEach((offset, i) => {
                         const osc = alarmCtx.createOscillator();
@@ -2775,7 +2788,7 @@
                         osc.type = 'sine';
                         osc.frequency.value = (i === 2) ? 1174 : 880;
                         gain.gain.setValueAtTime(0.0001, start + offset);
-                        gain.gain.exponentialRampToValueAtTime(0.3, start + offset + 0.02);
+                        gain.gain.exponentialRampToValueAtTime(volume, start + offset + 0.02);
                         gain.gain.exponentialRampToValueAtTime(0.0001, start + offset + 0.22);
                         osc.connect(gain);
                         gain.connect(alarmCtx.destination);
@@ -3200,6 +3213,8 @@
                 document.getElementById('pomoBreakMin').value = p.breakMin;
                 document.getElementById('pomoLongMin').value = p.longMin;
                 document.getElementById('pomoAutoStart').checked = p.autoStart;
+                document.getElementById('pomoVolume').value = Math.round(p.volume * 100);
+                document.getElementById('pomoVolumeValue').innerText = `${Math.round(p.volume * 100)}%`;
                 updatePomodoroUi();
                 updateTimerUi();
                 updateTimerChip();
@@ -3260,6 +3275,16 @@
                 document.getElementById('pomoAutoStart').addEventListener('change', (e) => {
                     state.pomodoro.autoStart = e.target.checked;
                     savePomodoroData();
+                });
+                document.getElementById('pomoVolume').addEventListener('input', (e) => {
+                    const vol = clampNumber(e.target.value, 0, 100, 30) / 100;
+                    state.pomodoro.volume = vol;
+                    document.getElementById('pomoVolumeValue').innerText = `${Math.round(vol * 100)}%`;
+                    savePomodoroData();
+                });
+                document.getElementById('pomoVolumeTestBtn').addEventListener('click', () => {
+                    primeAlarmAudio();
+                    playAlarm();
                 });
                 document.getElementById('timerStartBtn').addEventListener('click', toggleTimer);
                 document.getElementById('timerResetBtn').addEventListener('click', resetTimer);

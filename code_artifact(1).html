@@ -9,7 +9,7 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=STIX+Two+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -297,6 +297,7 @@
                 <button data-bg="genko" class="bg-btn px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition shrink-0">原稿用紙</button>
                 <button data-bg="music" class="bg-btn px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition shrink-0">五線譜</button>
                 <button data-bg="english" class="bg-btn px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition shrink-0">英語4線</button>
+                <button data-bg="tex" class="bg-btn px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition shrink-0" title="LaTeX論文レイアウト">論文</button>
             </div>
         </div>
 
@@ -405,7 +406,7 @@
                 textSize: 24,
                 eraserWidth: 24,
                 toolBeforeRightErase: null,
-                bgType: 'grid',              // grid, ruled, dots, blank, dark, genko, music, english
+                bgType: 'grid',              // grid, ruled, dots, blank, dark, genko, music, english, tex
                 pages: [],                   // 各ページのCanvasデータURL配列
                 currentPageIndex: 0,
                 history: [],                 // Undo/Redoスタック
@@ -448,7 +449,7 @@
             const UI_MODE_KEY = 'handwritten_notes_ui_mode';
             const UI_HIDDEN_KEY = 'handwritten_notes_ui_hidden';
             const BACKUP_VERSION = 3;
-            const VALID_BACKGROUNDS = new Set(['grid', 'ruled', 'dots', 'blank', 'dark', 'genko', 'music', 'english']);
+            const VALID_BACKGROUNDS = new Set(['grid', 'ruled', 'dots', 'blank', 'dark', 'genko', 'music', 'english', 'tex']);
 
             // DOM要素の参照
             const canvas = document.getElementById('paintCanvas');
@@ -940,6 +941,68 @@
                         }
                         currentY += lineGap * 3 + groupGap;
                     }
+                } else if (bgType === 'tex') {
+                    // LaTeX (article) 風論文レイアウト: 余白・タイトル部・著者行・要旨・節見出しガイド
+                    const marginX = Math.max(48, Math.floor(w * 0.12));
+
+                    // タイトル下の二重罫線 (\title)
+                    const titleRuleY = 96;
+                    targetCtx.strokeStyle = mediumLine;
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(marginX, titleRuleY);
+                    targetCtx.lineTo(w - marginX, titleRuleY);
+                    targetCtx.moveTo(marginX, titleRuleY + 7);
+                    targetCtx.lineTo(w - marginX, titleRuleY + 7);
+                    targetCtx.stroke();
+
+                    // 著者・所属・日付の行ガイド (\author, \date)
+                    targetCtx.strokeStyle = subtleLine;
+                    const authorY = titleRuleY + 34;
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(w / 2 - 110, authorY);
+                    targetCtx.lineTo(w / 2 + 110, authorY);
+                    targetCtx.moveTo(w / 2 - 70, authorY + 24);
+                    targetCtx.lineTo(w / 2 + 70, authorY + 24);
+                    targetCtx.stroke();
+
+                    // 要旨ブロック (abstract環境): 左右インデンツ付きの上下罫
+                    const abstractTop = authorY + 56;
+                    const abstractBottom = abstractTop + 80;
+                    targetCtx.strokeStyle = subtleLine;
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(marginX + 64, abstractTop);
+                    targetCtx.lineTo(w - marginX - 64, abstractTop);
+                    targetCtx.moveTo(marginX + 64, abstractBottom);
+                    targetCtx.lineTo(w - marginX - 64, abstractBottom);
+                    targetCtx.stroke();
+                    targetCtx.fillStyle = mediumLine;
+                    targetCtx.font = "13px 'STIX Two Text', 'Times New Roman', serif";
+                    targetCtx.textAlign = 'center';
+                    targetCtx.fillText('Abstract', w / 2, abstractTop - 8);
+                    targetCtx.textAlign = 'left';
+
+                    // 本文の罫線ガイド
+                    const bodyLineGap = 30;
+                    for (let y = abstractBottom + 34; y < h - 36; y += bodyLineGap) {
+                        targetCtx.beginPath();
+                        targetCtx.moveTo(marginX, y);
+                        targetCtx.lineTo(w - marginX, y);
+                        targetCtx.stroke();
+                    }
+
+                    // 節見出しガイド (\section): 番号欄 + 見出し罫
+                    for (let y = abstractBottom + 34 + bodyLineGap * 3; y < h - 72; y += bodyLineGap * 8) {
+                        targetCtx.strokeStyle = mediumLine;
+                        targetCtx.beginPath();
+                        targetCtx.moveTo(marginX, y - 6);
+                        targetCtx.lineTo(marginX + 34, y - 6);
+                        targetCtx.stroke();
+                        targetCtx.strokeStyle = subtleLine;
+                        const sectionIndex = Math.floor((y - abstractBottom - 34 - bodyLineGap * 3) / (bodyLineGap * 8)) + 1;
+                        targetCtx.fillStyle = mediumLine;
+                        targetCtx.font = "italic 12px 'STIX Two Text', 'Times New Roman', serif";
+                        targetCtx.fillText(String(sectionIndex), marginX + 40, y - 2);
+                    }
                 }
 
                 targetCtx.restore();
@@ -952,6 +1015,13 @@
             }
 
             // --- 編集可能テキストオブジェクト ---
+            // 論文(TeX)背景ではセリフ体(STIX)を、それ以外はInterを使う
+            function getTextFontStack() {
+                return state.bgType === 'tex'
+                    ? "'STIX Two Text', 'Times New Roman', serif"
+                    : "'Inter', sans-serif";
+            }
+
             function getTextObjectColor(textObject) {
                 if (!textObject.colorIsDefault) return textObject.color;
                 return (state.uiMode === 'dark' || state.bgType === 'dark') ? '#f8fafc' : '#0f172a';
@@ -962,7 +1032,7 @@
                 const lineHeight = size * 1.25;
                 const lines = String(textObject.text || '').split('\n');
                 textCtx.save();
-                textCtx.font = `${size}px 'Inter', sans-serif`;
+                textCtx.font = `${size}px ${getTextFontStack()}`;
                 const width = Math.max(1, ...lines.map(line => textCtx.measureText(line || ' ').width));
                 textCtx.restore();
                 return {
@@ -981,7 +1051,7 @@
                     const lineHeight = size * 1.25;
                     textCtx.save();
                     textCtx.globalAlpha = 1;
-                    textCtx.font = `${size}px 'Inter', sans-serif`;
+                    textCtx.font = `${size}px ${getTextFontStack()}`;
                     textCtx.textBaseline = 'top';
                     textCtx.fillStyle = getTextObjectColor(textObject);
                     String(textObject.text || '').split('\n').forEach((line, index) => {
@@ -1351,6 +1421,7 @@
                 textInput.style.height = 'auto';
                 textInput.style.fontSize = `${fontSize}px`;
                 textInput.style.lineHeight = '1.25';
+                textInput.style.fontFamily = getTextFontStack();
                 textInput.style.color = textColor;
                 textInput.classList.remove('hidden');
                 // mousedown本来のフォーカス処理が終わった後で入力欄へフォーカスする

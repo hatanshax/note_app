@@ -111,6 +111,8 @@
 
         /* 集中モード: floatingパネルを全域非表示にし、復元ボタンのみ残す */
         body.ui-hidden .hideable-panel { display: none !important; }
+        /* 集中モードでも描画色の選択だけは残す */
+        body.ui-hidden #propsBar > *:not(#colorPalette) { display: none !important; }
         #uiShowBtn {
             display: none;
             align-items: center;
@@ -238,7 +240,7 @@
         </div>
 
         <!-- 下部 floating プロパティバー (色・線の太さ・背景設定) -->
-        <div class="theme-panel hideable-panel absolute bottom-6 left-1/2 -translate-x-1/2 z-10 bg-white/95 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-slate-200/80 flex flex-wrap items-center gap-4 max-w-[95vw]">
+        <div id="propsBar" class="theme-panel absolute bottom-6 left-1/2 -translate-x-1/2 z-10 bg-white/95 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-slate-200/80 flex flex-wrap items-center gap-4 max-w-[95vw]">
             
             <!-- カスタムカラーパレット -->
             <div class="flex items-center space-x-2" id="colorPalette">

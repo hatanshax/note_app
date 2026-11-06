@@ -1081,9 +1081,11 @@
                 return current;
             }
 
+            // --- ドキュメント構造編集ドメイン（ページ配列 × 章アンカー） ---
+            // ページと章の整合性はここにある純粋操作 + commitStructureChange でのみ変更する
             function startChapterAt(pageIndex, title) {
                 if (state.chapters.some(c => c.startPage === pageIndex)) {
-                    alert('このページは既に章の先頭です。章名を変更する場合はアウトラインから編集してください。');
+                    alert('このページは既に章の先頭です。');
                     return null;
                 }
                 const chapter = {
@@ -1093,27 +1095,19 @@
                 };
                 state.chapters.push(chapter);
                 sortChapters();
-                syncCurrentNoteToMemory();
-                renderChapterPanel();
-                updatePageUI();
                 return chapter;
             }
 
             function renameChapter(chapterId, newTitle) {
                 const chapter = state.chapters.find(c => c.id === chapterId);
-                if (!chapter || !newTitle || !newTitle.trim()) return;
+                if (!chapter || !newTitle || !newTitle.trim()) return false;
                 chapter.title = newTitle.trim();
-                syncCurrentNoteToMemory();
-                renderChapterPanel();
-                updatePageUI();
+                return true;
             }
 
             function deleteChapter(chapterId) {
                 // ページは消えず、前の章の範囲へ戻るだけ
                 state.chapters = state.chapters.filter(c => c.id !== chapterId);
-                syncCurrentNoteToMemory();
-                renderChapterPanel();
-                updatePageUI();
             }
 
             function renderChapterPanel() {
@@ -1158,11 +1152,12 @@
                     row.querySelector('.rename-chapter-btn').addEventListener('click', (e) => {
                         e.stopPropagation();
                         const newTitle = prompt('章名を入力', chapter.title);
-                        if (newTitle) renameChapter(chapter.id, newTitle);
+                        if (newTitle && renameChapter(chapter.id, newTitle)) commitStructureChange();
                     });
                     row.querySelector('.delete-chapter-btn').addEventListener('click', (e) => {
                         e.stopPropagation();
                         deleteChapter(chapter.id);
+                        commitStructureChange();
                     });
                     listEl.appendChild(row);
                 });
@@ -1177,7 +1172,16 @@
                 document.getElementById('chapterPanel').classList.add('hidden');
             }
 
-            // --- ページ整理（並べ替え・間挿入） ---
+            // 構造変更の確定ポイント: 保存と表示更新（章パネル・ページ整理・現在位置UI）を一元化する
+            function commitStructureChange() {
+                syncCurrentNoteToMemory();
+                updatePageUI();
+                if (!document.getElementById('pageManagerModal').classList.contains('hidden')) {
+                    renderPageManager();
+                }
+            }
+
+            // --- ページ配列の純粋操作（章アンカーも同時に辿る） ---
             function insertPageAt(index) {
                 const insertAt = Math.max(0, Math.min(index, state.pages.length));
                 state.pages.splice(insertAt, 0, null);
@@ -1273,6 +1277,9 @@
                     <button class="insert-after-btn absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-white/90 hover:bg-blue-500 hover:text-white text-slate-600 shadow transition" title="このページの次に新規ページを挿入">
                         <i class="fa-solid fa-plus text-[10px]"></i>
                     </button>
+                    <button class="chapter-toggle-btn absolute bottom-1.5 right-1.5 w-6 h-6 rounded-full shadow transition ${chapterStart ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-white/90 text-slate-600 hover:bg-blue-500 hover:text-white'}" title="${chapterStart ? '章名を編集 / 削除' : 'このページから章を開始'}">
+                        <i class="fa-solid fa-bookmark text-[10px]"></i>
+                    </button>
                 `;
                 renderPageThumb(card.querySelector('canvas'), pageData);
 
@@ -1299,16 +1306,31 @@
                     if (from === null || from === index) return;
                     // ドロップ先のカードの直前に入る
                     movePageTo(from, from < index ? index - 1 : index);
-                    syncCurrentNoteToMemory();
-                    updatePageUI();
-                    renderPageManager();
+                    commitStructureChange();
                 });
                 card.querySelector('.insert-after-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
                     insertPageAt(index + 1);
-                    syncCurrentNoteToMemory();
-                    updatePageUI();
-                    renderPageManager();
+                    commitStructureChange();
+                });
+                // 章: 未開始なら新規作成、開始済みなら名前編集（空入力で削除）
+                card.querySelector('.chapter-toggle-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const existing = state.chapters.find(c => c.startPage === index);
+                    if (existing) {
+                        const input = prompt('章名を編集します（空にすると削除）', existing.title);
+                        if (input === null) return;
+                        if (input.trim()) {
+                            if (renameChapter(existing.id, input)) commitStructureChange();
+                        } else if (confirm(`章「${existing.title}」を削除しますか？（ページは消えません）`)) {
+                            deleteChapter(existing.id);
+                            commitStructureChange();
+                        }
+                    } else {
+                        const input = prompt('章名を入力', `第${state.chapters.length + 1}章`);
+                        if (input === null) return;
+                        if (startChapterAt(index, input)) commitStructureChange();
+                    }
                 });
                 // カードクリックでそのページへ移動して閉じる
                 card.addEventListener('click', (e) => {
@@ -2819,16 +2841,15 @@
             document.getElementById('addChapterHereBtn').addEventListener('click', () => {
                 const title = prompt('章名を入力', `第${state.chapters.length + 1}章`);
                 if (title === null) return;
-                startChapterAt(state.currentPageIndex, title);
+                if (startChapterAt(state.currentPageIndex, title)) commitStructureChange();
             });
             document.getElementById('addChapterNewPageBtn').addEventListener('click', () => {
                 const title = prompt('章名を入力', `第${state.chapters.length + 1}章`);
                 if (title === null) return;
                 saveCurrentPageData();
-                state.pages.push(null);
-                const newPageIndex = state.pages.length - 1;
+                const newPageIndex = insertPageAt(state.pages.length);
                 startChapterAt(newPageIndex, title);
-                loadPageData(newPageIndex);
+                loadPageData(newPageIndex); // loadPageDataが保存と表示更新を確定させる
             });
 
             // 画像ダウンロード

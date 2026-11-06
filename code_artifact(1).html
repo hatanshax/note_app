@@ -108,6 +108,15 @@
         body.dark-mode #canvasTextInput { background-color: rgba(15, 23, 42, 0.97) !important; }
         body.dark-mode #autoInkCanvas,
         body.canvas-dark-paper #autoInkCanvas { filter: invert(1); }
+
+        /* 集中モード: floatingパネルを全域非表示にし、復元ボタンのみ残す */
+        body.ui-hidden .hideable-panel { display: none !important; }
+        #uiShowBtn {
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        body.ui-hidden #uiShowBtn { display: flex; }
     </style>
 </head>
 <body class="h-full bg-slate-100 flex flex-col overflow-hidden select-none">
@@ -162,6 +171,10 @@
             <button id="clearBtn" class="p-2.5 text-rose-500 hover:bg-rose-50 rounded-xl transition" title="全消去">
                 <i class="fa-solid fa-trash-can"></i>
             </button>
+            <button id="uiHideToggleBtn" class="p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition flex items-center" title="集中モード: ツールバーを隠す (Ctrl+Shift+H)" aria-pressed="false">
+                <i id="uiHideToggleIcon" class="fa-solid fa-eye"></i>
+                <span id="uiHideToggleLabel" class="hidden lg:inline ml-1 text-xs font-medium">集中</span>
+            </button>
             <button id="themeToggleBtn" class="p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition flex items-center" title="ダークモードに切り替え" aria-label="表示モードを切り替え">
                 <i id="themeToggleIcon" class="fa-solid fa-moon"></i>
                 <span id="themeToggleLabel" class="hidden lg:inline ml-1 text-xs font-medium">ダーク</span>
@@ -186,7 +199,7 @@
     <div class="flex-1 flex relative overflow-hidden">
 
         <!-- 左側 floating ツールバー (メインツール) -->
-        <div class="theme-panel absolute left-4 top-4 z-10 bg-white/90 backdrop-blur-md p-1.5 rounded-2xl shadow-lg border border-slate-200/80 flex flex-col space-y-1.5">
+        <div class="theme-panel hideable-panel absolute left-4 top-4 z-10 bg-white/90 backdrop-blur-md p-1.5 rounded-2xl shadow-lg border border-slate-200/80 flex flex-col space-y-1.5">
             <button data-tool="pen" class="tool-btn active p-3 rounded-xl text-slate-600 hover:bg-slate-100 transition relative group" title="ペン (P)">
                 <i class="fa-solid fa-pen text-lg block"></i>
                 <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition whitespace-nowrap z-30">ペン</span>
@@ -225,7 +238,7 @@
         </div>
 
         <!-- 下部 floating プロパティバー (色・線の太さ・背景設定) -->
-        <div class="theme-panel absolute bottom-6 left-1/2 -translate-x-1/2 z-10 bg-white/95 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-slate-200/80 flex flex-wrap items-center gap-4 max-w-[95vw]">
+        <div class="theme-panel hideable-panel absolute bottom-6 left-1/2 -translate-x-1/2 z-10 bg-white/95 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-slate-200/80 flex flex-wrap items-center gap-4 max-w-[95vw]">
             
             <!-- カスタムカラーパレット -->
             <div class="flex items-center space-x-2" id="colorPalette">
@@ -297,6 +310,11 @@
             
             <!-- インラインテキスト入力用オーバーレイ -->
             <textarea id="canvasTextInput" rows="1" placeholder="文字を入力（Ctrl/⌘ + Enterで確定）" class="hidden absolute z-30 min-w-64 min-h-10 resize-none overflow-hidden bg-white/95 border-2 border-blue-500 rounded-lg outline-none font-sans text-slate-800 px-2 py-1.5 shadow-lg" style="transform: translate(0, 0);"></textarea>
+
+            <!-- 集中モード中のUI復元ボタン -->
+            <button id="uiShowBtn" class="theme-panel absolute right-4 bottom-6 z-10 w-11 h-11 rounded-full bg-white/90 backdrop-blur-md shadow-lg border border-slate-200/80 text-slate-500 hover:text-slate-700 transition" title="ツールバーを表示 (Ctrl+Shift+H)" aria-label="ツールバーを表示">
+                <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
+            </button>
         </div>
     </div>
 
@@ -348,6 +366,7 @@
                 color: '#1e293b',
                 colorIsDefault: true,        // trueならモード・背景に合わせて黒/白を自動選択
                 uiMode: 'light',             // light, dark
+                uiHidden: false,            // 集中モード: trueならツールUIを隠す
                 lineWidth: 3,
                 textSize: 24,
                 eraserWidth: 24,
@@ -385,9 +404,11 @@
                 notesList: []
             };
 
-            const STORAGE_KEY = 'handwritten_notes_data_v2';
+            const STORAGE_KEY = 'handwritten_notes_data_v3';
+            const LEGACY_STORAGE_KEY = 'handwritten_notes_data_v2';
             const UI_MODE_KEY = 'handwritten_notes_ui_mode';
-            const BACKUP_VERSION = 2;
+            const UI_HIDDEN_KEY = 'handwritten_notes_ui_hidden';
+            const BACKUP_VERSION = 3;
             const VALID_BACKGROUNDS = new Set(['grid', 'ruled', 'dots', 'blank', 'dark', 'genko', 'music', 'english']);
 
             // DOM要素の参照
@@ -403,6 +424,18 @@
             const container = document.getElementById('canvasContainer');
             const textInput = document.getElementById('canvasTextInput');
             const selectionOverlay = document.getElementById('selectionOverlay');
+
+            // --- 集中モード（ツールUIの非表示/表示） ---
+            function setUiHidden(hidden, persist = true) {
+                state.uiHidden = hidden;
+                document.body.classList.toggle('ui-hidden', hidden);
+                document.getElementById('uiHideToggleIcon').className = `fa-solid ${hidden ? 'fa-eye-slash' : 'fa-eye'}`;
+                document.getElementById('uiHideToggleLabel').innerText = hidden ? '表示' : '集中';
+                const toggleBtn = document.getElementById('uiHideToggleBtn');
+                toggleBtn.title = hidden ? 'ツールバーを表示 (Ctrl+Shift+H)' : '集中モード: ツールバーを隠す (Ctrl+Shift+H)';
+                toggleBtn.setAttribute('aria-pressed', String(hidden));
+                if (persist) localStorage.setItem(UI_HIDDEN_KEY, String(hidden));
+            }
 
             function getDefaultDrawingColor() {
                 // 黒板、またはダークモードの用紙には白。それ以外には黒を使う
@@ -1599,6 +1632,8 @@
                 applyUiMode(state.uiMode === 'dark' ? 'light' : 'dark');
                 syncCurrentNoteToMemory();
             });
+            document.getElementById('uiHideToggleBtn').addEventListener('click', () => setUiHidden(!state.uiHidden));
+            document.getElementById('uiShowBtn').addEventListener('click', () => setUiHidden(false));
 
             // 太さスライダー
             const widthInput = document.getElementById('lineWidth');
@@ -1742,6 +1777,9 @@
                 } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
                     e.preventDefault();
                     redo();
+                } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'h') {
+                    e.preventDefault();
+                    setUiHidden(!state.uiHidden);
                 } else if (e.key.toLowerCase() === 'p') {
                     document.querySelector('[data-tool="pen"]').click();
                 } else if (e.key.toLowerCase() === 'h') {
@@ -1760,6 +1798,7 @@
 
             // --- アプリケーション起動 ---
             applyUiMode(localStorage.getItem(UI_MODE_KEY) || 'light', false);
+            setUiHidden(localStorage.getItem(UI_HIDDEN_KEY) === 'true', false);
             resizeCanvas();
             loadAllNotesFromStorage();
         };

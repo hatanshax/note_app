@@ -358,19 +358,9 @@
                 </div>
             </div>
 
-            <!-- 現在位置のパンくずリスト -->
-            <div id="folderBreadcrumb" class="px-6 py-2 border-b border-slate-100 flex items-center flex-wrap gap-1 text-xs text-slate-600">
+            <!-- 階層ツリー（論文のアウトライン/PDFサイドバー相当） -->
+            <div id="hierarchyTree" class="px-6 py-3 overflow-y-auto flex-1">
                 <!-- JSで動的に描画 -->
-            </div>
-
-            <!-- フォルダー & ノート一覧 -->
-            <div class="p-6 overflow-y-auto flex-1 flex flex-col gap-5">
-                <div id="foldersSection" class="flex flex-col gap-2"></div>
-                <div id="notesGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
-                <p id="browserEmptyMessage" class="hidden text-center text-sm text-slate-400 py-10">
-                    <i class="fa-regular fa-folder-open text-2xl block mb-2"></i>
-                    この場所にはノートもフォルダーもありません
-                </p>
             </div>
         </div>
     </div>
@@ -440,7 +430,8 @@
 
                 // フォルダー階層（論文/PDFのような構造）用ステート
                 folders: [],               // {id, title, parentId, updatedAt}
-                modalFolderId: null,       // ノート一覧モーダルで開いているフォルダー
+                modalFolderId: null,       // ノート一覧モーダルで選択中のフォルダー（作成先コンテキスト）
+                folderTreeExpanded: null,  // ツリーで展開中のフォルダーIDのSet
                 moveContext: null          // 移動ダイアログで移動中の対象 {type:'note'|'folder', id}
             };
 
@@ -669,7 +660,7 @@
                 if (state.currentNoteId === noteId) {
                     loadNoteById(state.notesList[0].id);
                 }
-                renderNotesBrowser();
+                renderHierarchyTree();
             }
 
             // --- フォルダー階層（ノートの整理） ---
@@ -766,7 +757,7 @@
                 if (state.moveContext && state.moveContext.id === folderId) closeMoveDialog();
 
                 saveAllNotesToStorage();
-                renderNotesBrowser();
+                renderHierarchyTree();
             }
 
             function moveNoteToFolder(noteId, targetFolderId) {
@@ -1702,50 +1693,38 @@
                 return getFolderAncestry(folderId).map(f => f.title).join(' › ') || 'ホーム';
             }
 
-            function renderBreadcrumb() {
-                const breadcrumb = document.getElementById('folderBreadcrumb');
-                breadcrumb.innerHTML = '';
-
-                const appendCrumb = (label, folderId, isActive) => {
-                    const chip = document.createElement('button');
-                    chip.type = 'button';
-                    chip.className = `px-2 py-1 rounded-lg font-medium transition ${isActive ? 'text-slate-800 bg-slate-100' : 'text-blue-600 hover:bg-slate-100'}`;
-                    chip.innerHTML = label;
-                    if (!isActive) {
-                        chip.addEventListener('click', () => {
-                            state.modalFolderId = folderId || null;
-                            renderNotesBrowser();
-                        });
-                    }
-                    breadcrumb.appendChild(chip);
-                };
-
-                const chain = state.modalFolderId ? getFolderAncestry(state.modalFolderId) : [];
-                appendCrumb('<i class="fa-solid fa-house mr-1"></i>ホーム', null, chain.length === 0);
-                chain.forEach((folder, index) => {
-                    const chevron = document.createElement('span');
-                    chevron.className = 'text-slate-400';
-                    chevron.innerHTML = '<i class="fa-solid fa-angle-right text-[9px]"></i>';
-                    breadcrumb.appendChild(chevron);
-                    appendCrumb(folder.title, folder.id, index === chain.length - 1);
-                });
+            // --- 階層ツリー表示（PDFアウトライン風） ---
+            function getExpandedFolderIds() {
+                // 初回は全フォルダー展開。以降はユーザー操作で畳んだまま保持
+                if (!state.folderTreeExpanded) {
+                    state.folderTreeExpanded = new Set(state.folders.map(f => f.id));
+                }
+                return state.folderTreeExpanded;
             }
 
-            function createFolderCard(folder) {
+            function expandFolderPath(folderId) {
+                if (!folderId) return;
+                const expandedIds = getExpandedFolderIds();
+                getFolderAncestry(folderId).forEach(folder => expandedIds.add(folder.id));
+                expandedIds.add(folderId);
+            }
+
+            function createFolderTreeRow(folder, depth) {
+                const expandedIds = getExpandedFolderIds();
+                const isExpanded = expandedIds.has(folder.id);
+                const isSelected = (state.modalFolderId || null) === folder.id;
                 const { notes, folders } = countFolderContents(folder.id);
-                const card = document.createElement('div');
-                card.className = 'group flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:border-amber-400 hover:shadow-sm transition cursor-pointer';
-                card.innerHTML = `
-                    <i class="fa-solid fa-folder text-amber-500 text-xl shrink-0"></i>
-                    <div class="flex-1 min-w-0">
-                        <h3 class="font-bold text-slate-800 text-sm truncate">${folder.title}</h3>
-                        <div class="text-xs text-slate-400 flex items-center gap-3">
-                            <span><i class="fa-regular fa-file-lines mr-1"></i>${notes}ノート</span>
-                            <span><i class="fa-solid fa-folder mr-1 text-[10px]"></i>${folders}フォルダー</span>
-                            <span><i class="fa-regular fa-clock mr-1"></i>${formatNoteDate(folder.updatedAt)}</span>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
+
+                const row = document.createElement('div');
+                row.className = `group flex items-center gap-2 p-2 rounded-xl cursor-pointer transition ${isSelected ? 'bg-blue-50 ring-1 ring-blue-400' : 'hover:bg-slate-100'}`;
+                row.style.paddingLeft = `${12 + depth * 18}px`;
+                row.innerHTML = `
+                    <i class="fa-solid ${isExpanded ? 'fa-chevron-down' : 'fa-chevron-right'} text-[9px] text-slate-400 w-3 shrink-0"></i>
+                    <i class="fa-solid fa-folder${isExpanded ? '-open' : ''} ${isSelected ? 'text-blue-500' : 'text-amber-500'} shrink-0"></i>
+                    <span class="font-semibold text-slate-800 text-sm truncate flex-1">${folder.title}</span>
+                    <span class="text-[10px] text-slate-400 shrink-0"><i class="fa-regular fa-file-lines mr-0.5"></i>${notes}</span>
+                    <span class="text-[10px] text-slate-400 shrink-0"><i class="fa-solid fa-folder mr-0.5 text-[9px]"></i>${folders}</span>
+                    <div class="hidden group-hover:flex items-center gap-0.5 shrink-0">
                         <button class="rename-folder-btn text-slate-400 hover:text-blue-600 p-1.5 rounded-lg hover:bg-blue-50 transition" title="フォルダー名を変更">
                             <i class="fa-solid fa-pen text-xs"></i>
                         </button>
@@ -1757,98 +1736,110 @@
                         </button>
                     </div>
                 `;
-                card.addEventListener('click', (e) => {
+                row.addEventListener('click', (e) => {
                     if (e.target.closest('button')) return;
+                    // 行クリックで選択＋展開/折りたたみ
                     state.modalFolderId = folder.id;
-                    renderNotesBrowser();
+                    if (expandedIds.has(folder.id)) {
+                        expandedIds.delete(folder.id);
+                    } else {
+                        expandedIds.add(folder.id);
+                    }
+                    renderHierarchyTree();
                 });
-                card.querySelector('.rename-folder-btn').addEventListener('click', (e) => {
+                row.querySelector('.rename-folder-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
                     const newTitle = prompt('フォルダー名を入力', folder.title);
                     if (newTitle && newTitle.trim()) {
                         renameFolder(folder.id, newTitle.trim());
-                        renderNotesBrowser();
+                        renderHierarchyTree();
                     }
                 });
-                card.querySelector('.move-folder-btn').addEventListener('click', (e) => {
+                row.querySelector('.move-folder-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
                     openMoveDialog('folder', folder.id);
                 });
-                card.querySelector('.delete-folder-btn').addEventListener('click', (e) => {
+                row.querySelector('.delete-folder-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
                     deleteFolder(folder.id);
                 });
-                return card;
+                return row;
             }
 
-            function createNoteCard(note) {
+            function createNoteTreeRow(note, depth) {
                 const isSelected = note.id === state.currentNoteId;
                 const dateStr = formatNoteDate(note.updatedAt);
 
-                const card = document.createElement('div');
-                card.className = `p-4 rounded-xl border transition cursor-pointer flex flex-col justify-between ${
-                    isSelected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-500/20' : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
-                }`;
-
-                card.innerHTML = `
-                    <div>
-                        <div class="flex items-start justify-between mb-2">
-                            <h3 class="font-bold text-slate-800 text-sm truncate pr-2">${note.title || '無題のノート'}</h3>
-                            <span class="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full uppercase">${note.bgType || 'grid'}</span>
-                        </div>
-                        <div class="text-xs text-slate-400 flex items-center space-x-3 mb-3">
-                            <span><i class="fa-regular fa-file-lines mr-1"></i>${note.pages ? note.pages.length : 1}ページ</span>
-                            <span><i class="fa-regular fa-clock mr-1"></i>${dateStr}</span>
-                        </div>
-                    </div>
-                    <div class="flex items-center justify-between pt-2 border-t border-slate-100 mt-2">
-                        <span class="text-xs text-blue-600 font-semibold">${isSelected ? '開いています' : '開く'}</span>
-                        <div class="flex items-center gap-0.5">
-                            <button class="move-note-btn text-slate-400 hover:text-blue-600 p-1.5 rounded-lg hover:bg-blue-50 transition" title="移動先を変更">
-                                <i class="fa-solid fa-arrow-right-arrow-left text-xs"></i>
-                            </button>
-                            <button class="delete-note-btn text-rose-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition" title="ノート削除">
-                                <i class="fa-regular fa-trash-can text-sm"></i>
-                            </button>
-                        </div>
+                const row = document.createElement('div');
+                row.className = `group flex items-center gap-2 p-2 rounded-xl cursor-pointer transition ${isSelected ? 'bg-blue-50 ring-1 ring-blue-400' : 'hover:bg-slate-100'}`;
+                row.style.paddingLeft = `${12 + depth * 18 + 15}px`;
+                row.innerHTML = `
+                    <i class="fa-regular fa-file-lines ${isSelected ? 'text-blue-500' : 'text-slate-400'} text-sm shrink-0"></i>
+                    <span class="text-slate-700 text-sm truncate flex-1">${note.title || '無題のノート'}</span>
+                    <span class="text-[10px] text-slate-400 shrink-0">${note.pages ? note.pages.length : 1}p</span>
+                    <span class="text-[10px] text-slate-400 shrink-0 hidden sm:inline">${dateStr}</span>
+                    <span class="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full uppercase shrink-0 hidden lg:inline">${note.bgType || 'grid'}</span>
+                    <div class="hidden group-hover:flex items-center gap-0.5 shrink-0">
+                        <button class="move-note-btn text-slate-400 hover:text-blue-600 p-1.5 rounded-lg hover:bg-blue-50 transition" title="移動先を変更">
+                            <i class="fa-solid fa-arrow-right-arrow-left text-xs"></i>
+                        </button>
+                        <button class="delete-note-btn text-rose-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition" title="ノート削除">
+                            <i class="fa-regular fa-trash-can text-xs"></i>
+                        </button>
                     </div>
                 `;
-
-                card.addEventListener('click', (e) => {
-                    if (e.target.closest('button')) return; // 操作ボタン押下時は開かない
+                row.addEventListener('click', (e) => {
+                    if (e.target.closest('button')) return;
                     syncCurrentNoteToMemory();
                     loadNoteById(note.id);
                     closeNotesModal();
                 });
-
-                card.querySelector('.move-note-btn').addEventListener('click', (e) => {
+                row.querySelector('.move-note-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
                     openMoveDialog('note', note.id);
                 });
-
-                card.querySelector('.delete-note-btn').addEventListener('click', (e) => {
+                row.querySelector('.delete-note-btn').addEventListener('click', (e) => {
                     e.stopPropagation();
                     deleteNote(note.id);
                 });
-
-                return card;
+                return row;
             }
 
-            function renderNotesBrowser() {
-                renderBreadcrumb();
-                const foldersContainer = document.getElementById('foldersSection');
-                const notesContainer = document.getElementById('notesGrid');
-                const emptyMessage = document.getElementById('browserEmptyMessage');
-                foldersContainer.innerHTML = '';
-                notesContainer.innerHTML = '';
+            function renderHierarchyTree() {
+                const treeEl = document.getElementById('hierarchyTree');
+                treeEl.innerHTML = '';
+                const expandedIds = getExpandedFolderIds();
 
-                const currentFolderId = state.modalFolderId || null;
-                const childFolders = getChildFolders(currentFolderId);
-                const folderNotes = getNotesInFolder(currentFolderId);
+                // ルート（ホーム）選択行
+                const isRootSelected = !(state.modalFolderId || null);
+                const rootRow = document.createElement('div');
+                rootRow.className = `group flex items-center gap-2 p-2 rounded-xl cursor-pointer transition ${isRootSelected ? 'bg-blue-50 ring-1 ring-blue-400' : 'hover:bg-slate-100'}`;
+                rootRow.innerHTML = `
+                    <i class="fa-solid fa-house w-3 text-center text-[11px] ${isRootSelected ? 'text-blue-500' : 'text-slate-400'} shrink-0"></i>
+                    <span class="font-bold text-slate-800 text-sm">ホーム</span>
+                    <span class="text-[10px] text-slate-400 ml-auto font-bold">${state.notesList.length}ノート</span>
+                `;
+                rootRow.addEventListener('click', () => {
+                    state.modalFolderId = null;
+                    renderHierarchyTree();
+                });
+                treeEl.appendChild(rootRow);
 
-                childFolders.forEach(folder => foldersContainer.appendChild(createFolderCard(folder)));
-                folderNotes.forEach(note => notesContainer.appendChild(createNoteCard(note)));
-                emptyMessage.classList.toggle('hidden', childFolders.length > 0 || folderNotes.length > 0);
+                const renderLevel = (parentId, depth) => {
+                    getChildFolders(parentId).forEach(folder => {
+                        treeEl.appendChild(createFolderTreeRow(folder, depth));
+                        if (expandedIds.has(folder.id)) renderLevel(folder.id, depth + 1);
+                    });
+                    getNotesInFolder(parentId).forEach(note => treeEl.appendChild(createNoteTreeRow(note, depth)));
+                };
+                renderLevel(null, 1);
+
+                if (treeEl.children.length === 1) {
+                    const emptyEl = document.createElement('p');
+                    emptyEl.className = 'text-center text-sm text-slate-400 py-10';
+                    emptyEl.innerHTML = '<i class="fa-regular fa-folder-open text-2xl block mb-2"></i>ノートもフォルダーもありません';
+                    treeEl.appendChild(emptyEl);
+                }
             }
 
             // --- 移動先選択ダイアログ ---
@@ -1878,7 +1869,8 @@
                                 moveFolderToFolder(state.moveContext.id, targetId);
                             }
                             closeMoveDialog();
-                            renderNotesBrowser();
+                            expandFolderPath(targetId);
+                            renderHierarchyTree();
                         });
                     }
                     list.appendChild(row);
@@ -1907,10 +1899,11 @@
 
             function openNotesModal() {
                 syncCurrentNoteToMemory();
-                // 現在開いているノートがあるフォルダーから参照開始
+                // 現在開いているノートがあるフォルダーを選択状態にする
                 const currentNote = state.notesList.find(n => n.id === state.currentNoteId);
                 state.modalFolderId = (currentNote && currentNote.parentId) || null;
-                renderNotesBrowser();
+                expandFolderPath(state.modalFolderId);
+                renderHierarchyTree();
                 document.getElementById('notesModal').classList.remove('hidden');
             }
 
@@ -2034,9 +2027,10 @@
                         state.folders = folders;
                         state.notesList = notes;
                         state.modalFolderId = null;
+                        state.folderTreeExpanded = null;
                         saveAllNotesToStorage();
                         loadNoteById(state.notesList[0].id);
-                        renderNotesBrowser();
+                        renderHierarchyTree();
                         alert(`${state.notesList.length}件のノートと${state.folders.length}件のフォルダーをインポートしました。`);
                     } catch(err) {
                         console.error('インポート失敗:', err);
@@ -2192,8 +2186,10 @@
             document.getElementById('modalCreateFolderBtn').addEventListener('click', () => {
                 const title = prompt('新しいフォルダー名を入力', '新しいフォルダー');
                 if (title && title.trim()) {
-                    createFolder(title.trim(), state.modalFolderId);
-                    renderNotesBrowser();
+                    const folder = createFolder(title.trim(), state.modalFolderId);
+                    state.modalFolderId = folder.id;
+                    expandFolderPath(folder.id);
+                    renderHierarchyTree();
                 }
             });
 

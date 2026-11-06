@@ -173,6 +173,14 @@
             <button id="clearBtn" class="p-2.5 text-rose-500 hover:bg-rose-50 rounded-xl transition" title="全消去">
                 <i class="fa-solid fa-trash-can"></i>
             </button>
+            <button id="calendarBtn" class="p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition flex items-center" title="カレンダーと予定を開く">
+                <i class="fa-solid fa-calendar-days"></i>
+                <span class="hidden lg:inline ml-1 text-xs font-medium">カレンダー</span>
+            </button>
+            <button id="pomodoroBtn" class="p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition flex items-center" title="ポモドーロ・タイマーを開く">
+                <i class="fa-solid fa-stopwatch"></i>
+                <span class="hidden lg:inline ml-1 text-xs font-medium">ポモドーロ</span>
+            </button>
             <button id="uiHideToggleBtn" class="p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition flex items-center" title="集中モード: ツールバーを隠す (Ctrl+Shift+H)" aria-pressed="false">
                 <i id="uiHideToggleIcon" class="fa-solid fa-eye"></i>
                 <span id="uiHideToggleLabel" class="hidden lg:inline ml-1 text-xs font-medium">集中</span>
@@ -244,12 +252,7 @@
             
             <!-- カスタムカラーパレット -->
             <div class="flex items-center space-x-2" id="colorPalette">
-                <label for="colorChoice" class="text-xs text-slate-400 font-medium shrink-0">描画色:</label>
-                <select id="colorChoice" class="text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer" title="デフォルト色またはカスタム色を選択">
-                    <option value="default">デフォルト（自動）</option>
-                    <option value="custom">カスタムカラー…</option>
-                </select>
-                <input type="color" id="customColor" value="#1e293b" class="w-9 h-9 rounded-full cursor-pointer" title="カラーパレットを開く">
+                <input type="color" id="customColor" value="#1e293b" class="w-9 h-9 rounded-full cursor-pointer" title="カラーパレットを開く（ダブルクリックでデフォルト色に戻す）">
                 <span id="colorValue" class="text-xs font-mono font-medium text-slate-600 w-[4.5rem]">#1E293B</span>
             </div>
 
@@ -318,6 +321,18 @@
             <button id="uiShowBtn" class="theme-panel absolute right-4 bottom-6 z-10 w-11 h-11 rounded-full bg-white/90 backdrop-blur-md shadow-lg border border-slate-200/80 text-slate-500 hover:text-slate-700 transition" title="ツールバーを表示 (Ctrl+Shift+H)" aria-label="ツールバーを表示">
                 <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
             </button>
+
+            <!-- 実行中タイマーの常時表示チップ（集中モードでも残す） -->
+            <div id="timerChip" class="theme-panel absolute right-4 top-4 z-20 hidden items-center gap-2 bg-white/95 backdrop-blur-md pl-3 pr-1.5 py-1.5 rounded-full shadow-lg border border-slate-200/80 text-slate-700 transition">
+                <i id="timerChipIcon" class="fa-solid fa-stopwatch text-sm"></i>
+                <span id="timerChipTime" class="text-sm font-mono font-bold tabular-nums">25:00</span>
+                <button id="timerChipPauseBtn" class="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition" title="一時停止 / 再開">
+                    <i id="timerChipPauseIcon" class="fa-solid fa-pause text-[10px]"></i>
+                </button>
+                <button id="timerChipCloseBtn" class="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition" title="閉じる（タイマーは継続）">
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -385,6 +400,158 @@
         </div>
     </div>
 
+    <!-- カレンダー・予定モーダル -->
+    <div id="calendarModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="theme-modal bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+            <div class="theme-subpanel px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-calendar-days text-blue-600 text-xl"></i>
+                    <h2 class="text-lg font-bold text-slate-800">カレンダー</h2>
+                </div>
+                <button id="closeCalendarModalBtn" class="text-slate-400 hover:text-slate-600 p-2 rounded-lg transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="p-5 flex flex-col gap-4 overflow-y-auto">
+                <!-- 月切替 -->
+                <div class="flex items-center justify-between">
+                    <button id="calPrevBtn" class="p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition" title="前の月">
+                        <i class="fa-solid fa-chevron-left text-sm"></i>
+                    </button>
+                    <div class="flex items-center space-x-2">
+                        <h3 id="calMonthLabel" class="text-base font-bold text-slate-800 tabular-nums">—</h3>
+                        <button id="calTodayBtn" class="text-xs font-medium text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-lg transition">今日</button>
+                    </div>
+                    <button id="calNextBtn" class="p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition" title="次の月">
+                        <i class="fa-solid fa-chevron-right text-sm"></i>
+                    </button>
+                </div>
+
+                <!-- 曜日ヘッダー -->
+                <div class="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-400">
+                    <span class="text-rose-400">日</span><span>月</span><span>火</span><span>水</span><span>木</span><span class="text-sky-500">金</span><span class="text-sky-400">土</span>
+                </div>
+                <div id="calendarGrid" class="grid grid-cols-7 gap-1"></div>
+
+                <div class="h-px bg-slate-100"></div>
+
+                <!-- 選択日の予定 -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 id="calSelectedLabel" class="text-sm font-bold text-slate-800">—</h4>
+                        <span id="calEventCount" class="text-xs text-slate-400"></span>
+                    </div>
+                    <div id="calEventList" class="flex flex-col gap-1.5"></div>
+                </div>
+
+                <!-- 予定追加フォーム -->
+                <div class="flex items-center gap-2 flex-wrap">
+                    <input type="text" id="calEventTitle" placeholder="予定の内容を入力" class="flex-1 min-w-[12rem] text-sm border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-400 bg-white text-slate-800">
+                    <input type="time" id="calEventTime" class="text-sm border border-slate-300 rounded-lg px-2 py-2 outline-none focus:ring-2 focus:ring-blue-400 bg-white text-slate-800">
+                    <button id="calAddEventBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm flex items-center space-x-1.5">
+                        <i class="fa-solid fa-plus text-xs"></i>
+                        <span>追加</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ポモドーロ & タイマーモーダル -->
+    <div id="pomodoroModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="theme-modal bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden">
+            <div class="theme-subpanel px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-stopwatch text-blue-600 text-xl"></i>
+                    <h2 class="text-lg font-bold text-slate-800">ポモドーロ & タイマー</h2>
+                </div>
+                <button id="closePomodoroModalBtn" class="text-slate-400 hover:text-slate-600 p-2 rounded-lg transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- タブ -->
+            <div class="px-6 pt-4 flex gap-2">
+                <button id="pomoTabBtn" data-pane="pomodoro" class="prod-tab active px-4 py-2 rounded-xl text-sm font-medium bg-blue-600 text-white transition shadow-sm">
+                    <i class="fa-solid fa-bullseye mr-1.5"></i>ポモドーロ
+                </button>
+                <button id="timerTabBtn" data-pane="timer" class="prod-tab px-4 py-2 rounded-xl text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition">
+                    <i class="fa-regular fa-clock mr-1.5"></i>タイマー
+                </button>
+            </div>
+
+            <!-- ポモドーロペイン -->
+            <div id="pomoPane" class="p-6 flex flex-col items-center gap-4 overflow-y-auto">
+                <div class="flex items-center space-x-2">
+                    <span id="pomoPhaseDot" class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                    <span id="pomoPhaseLabel" class="text-sm font-semibold text-slate-600">集中 (作業)</span>
+                </div>
+                <div id="pomoDisplay" class="text-6xl font-mono font-bold text-slate-800 tabular-nums">25:00</div>
+                <p id="pomoCountLabel" class="text-xs text-slate-400">本日の集中: 0 回</p>
+
+                <div class="flex items-center gap-2 flex-wrap justify-center">
+                    <button id="pomoStartBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition shadow-sm flex items-center space-x-2 min-w-[7rem] justify-center">
+                        <i class="fa-solid fa-play text-xs"></i><span>開始</span>
+                    </button>
+                    <button id="pomoResetBtn" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-sm font-medium transition" title="現在のフェーズを最初から">
+                        <i class="fa-solid fa-arrow-rotate-left"></i>
+                    </button>
+                    <button id="pomoSkipBtn" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-sm font-medium transition" title="次のフェーズへスキップ">
+                        <i class="fa-solid fa-forward-step"></i>
+                    </button>
+                </div>
+
+                <div class="h-px bg-slate-100 w-full"></div>
+
+                <!-- 設定 -->
+                <div class="w-full">
+                    <p class="text-xs font-semibold text-slate-400 mb-2">設定（4回の集中ごとに長い休憩）</p>
+                    <div class="grid grid-cols-3 gap-2 mb-3">
+                        <label class="text-xs text-slate-500 flex flex-col gap-1">集中 (分)
+                            <input type="number" id="pomoWorkMin" min="1" max="120" value="25" class="text-sm border border-slate-300 rounded-lg px-2 py-1.5 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-blue-400">
+                        </label>
+                        <label class="text-xs text-slate-500 flex flex-col gap-1">休憩 (分)
+                            <input type="number" id="pomoBreakMin" min="1" max="60" value="5" class="text-sm border border-slate-300 rounded-lg px-2 py-1.5 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-blue-400">
+                        </label>
+                        <label class="text-xs text-slate-500 flex flex-col gap-1">長い休憩 (分)
+                            <input type="number" id="pomoLongMin" min="1" max="60" value="15" class="text-sm border border-slate-300 rounded-lg px-2 py-1.5 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-blue-400">
+                        </label>
+                    </div>
+                    <label class="flex items-center space-x-2 text-xs text-slate-500 cursor-pointer">
+                        <input type="checkbox" id="pomoAutoStart" checked class="accent-blue-600 w-4 h-4">
+                        <span>次のフェーズを自動的に開始する</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- タイマーペイン -->
+            <div id="timerPane" class="p-6 hidden flex-col items-center gap-4 overflow-y-auto">
+                <div id="timerDisplay" class="text-6xl font-mono font-bold text-slate-800 tabular-nums">00:00</div>
+                <div class="flex items-center gap-2">
+                    <input type="number" id="timerMinInput" min="0" max="999" value="10" class="w-20 text-sm text-center border border-slate-300 rounded-lg px-2 py-2 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-blue-400" title="分">
+                    <span class="text-xs text-slate-400 font-medium">分</span>
+                    <input type="number" id="timerSecInput" min="0" max="59" value="0" class="w-20 text-sm text-center border border-slate-300 rounded-lg px-2 py-2 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-blue-400" title="秒">
+                    <span class="text-xs text-slate-400 font-medium">秒</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <button data-preset-min="5" class="timer-preset bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-medium transition">5分</button>
+                    <button data-preset-min="10" class="timer-preset bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-medium transition">10分</button>
+                    <button data-preset-min="15" class="timer-preset bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-medium transition">15分</button>
+                    <button data-preset-min="30" class="timer-preset bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-medium transition">30分</button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="timerStartBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition shadow-sm flex items-center space-x-2 min-w-[7rem] justify-center">
+                        <i class="fa-solid fa-play text-xs"></i><span>開始</span>
+                    </button>
+                    <button id="timerResetBtn" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-sm font-medium transition">
+                        <i class="fa-solid fa-arrow-rotate-left"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         window.onload = function() {
             // --- アプリケーションの状態構造 ---
@@ -434,13 +601,37 @@
                 folders: [],               // {id, title, parentId, updatedAt}
                 modalFolderId: null,       // ノート一覧モーダルで選択中のフォルダー（作成先コンテキスト）
                 folderTreeExpanded: null,  // ツリーで展開中のフォルダーIDのSet
-                moveContext: null          // 移動ダイアログで移動中の対象 {type:'note'|'folder', id}
+                moveContext: null,         // 移動ダイアログで移動中の対象 {type:'note'|'folder', id}
+
+                // 生産性ツール（カレンダー / ポモドーロ / タイマー）用ステート
+                calendarEvents: [],        // {id, date:'YYYY-MM-DD', time:'HH:MM'|'', title}
+                calendarView: { year: 1970, month: 0 },
+                calendarSelectedDate: '',
+                pomodoro: {
+                    phase: 'work',          // work, break, long
+                    running: false,
+                    engaged: false,         // 一度でも開始したらtrue（リセットでfalse）
+                    remaining: 25 * 60,
+                    workMin: 25, breakMin: 5, longMin: 15,
+                    autoStart: true,
+                    today: '',              // 集中完了数を数えている日
+                    completedToday: 0,
+                    workCycle: 0            // 長い休憩判定用の集中完了回数
+                },
+                timer: {
+                    running: false,
+                    engaged: false,
+                    remaining: 0,
+                    total: 0
+                }
             };
 
             const STORAGE_KEY = 'handwritten_notes_data_v3';
             const LEGACY_STORAGE_KEY = 'handwritten_notes_data_v2';
             const UI_MODE_KEY = 'handwritten_notes_ui_mode';
             const UI_HIDDEN_KEY = 'handwritten_notes_ui_hidden';
+            const CALENDAR_STORAGE_KEY = 'productivity_calendar_v1';
+            const POMODORO_STORAGE_KEY = 'productivity_pomodoro_v1';
             const BACKUP_VERSION = 3;
             const VALID_BACKGROUNDS = new Set(['grid', 'ruled', 'dots', 'blank', 'dark', 'genko', 'music', 'english', 'tex']);
 
@@ -480,7 +671,6 @@
                 state.colorIsDefault = isDefault;
                 document.getElementById('customColor').value = color;
                 document.getElementById('colorValue').innerText = color.toUpperCase();
-                document.getElementById('colorChoice').value = isDefault ? 'default' : 'custom';
             }
 
             function applyUiMode(mode, persist = true) {
@@ -2101,13 +2291,8 @@
                 updateDrawingColor(e.target.value, false);
             });
 
-            document.getElementById('colorChoice').addEventListener('change', (e) => {
-                if (e.target.value === 'default') {
-                    updateDrawingColor(getDefaultDrawingColor(), true);
-                } else {
-                    updateDrawingColor(document.getElementById('customColor').value, false);
-                    document.getElementById('customColor').click();
-                }
+            document.getElementById('customColor').addEventListener('dblclick', () => {
+                updateDrawingColor(getDefaultDrawingColor(), true);
             });
 
             document.getElementById('themeToggleBtn').addEventListener('click', () => {
@@ -2294,11 +2479,625 @@
             // ウィンドウサイズ変更対応
             window.addEventListener('resize', resizeCanvas);
 
+            // ============================================================
+            // --- 生産性ツール（カレンダー / ポモドーロ / タイマー） ---
+            // ============================================================
+            const BASE_PAGE_TITLE = document.title;
+            const CAL_WEEKDAYS_JP = ['日', '月', '火', '水', '木', '金', '土'];
+
+            function pad2(n) { return String(n).padStart(2, '0'); }
+            function toDateKey(date) {
+                return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+            }
+            function makeId() {
+                return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+            }
+            function formatTime(totalSeconds) {
+                const s = Math.max(0, Math.floor(totalSeconds));
+                return `${pad2(Math.floor(s / 60))}:${pad2(s % 60)}`;
+            }
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+            function clampNumber(value, min, max, fallback) {
+                const n = parseInt(value, 10);
+                if (Number.isNaN(n)) return fallback;
+                return Math.min(max, Math.max(min, n));
+            }
+
+            // --- 保存/読み込み ---
+            function saveCalendarEvents() {
+                localStorage.setItem(CALENDAR_STORAGE_KEY, JSON.stringify(state.calendarEvents));
+            }
+            function savePomodoroData() {
+                const p = state.pomodoro;
+                localStorage.setItem(POMODORO_STORAGE_KEY, JSON.stringify({
+                    workMin: p.workMin, breakMin: p.breakMin, longMin: p.longMin,
+                    autoStart: p.autoStart, today: p.today,
+                    completedToday: p.completedToday, workCycle: p.workCycle
+                }));
+            }
+            function rolloverPomodoroToday() {
+                const p = state.pomodoro;
+                const today = toDateKey(new Date());
+                if (p.today !== today) {
+                    p.today = today;
+                    p.completedToday = 0;
+                    savePomodoroData();
+                }
+            }
+            function loadProductivityData() {
+                try {
+                    const rawCalendar = localStorage.getItem(CALENDAR_STORAGE_KEY);
+                    if (rawCalendar) {
+                        const parsed = JSON.parse(rawCalendar);
+                        if (Array.isArray(parsed)) {
+                            state.calendarEvents = parsed.filter(ev =>
+                                ev && typeof ev.date === 'string' && typeof ev.title === 'string');
+                        }
+                    }
+                } catch (e) { console.warn('カレンダーデータの読み込みに失敗しました', e); }
+                try {
+                    const rawPomo = localStorage.getItem(POMODORO_STORAGE_KEY);
+                    if (rawPomo) {
+                        const parsed = JSON.parse(rawPomo) || {};
+                        const p = state.pomodoro;
+                        p.workMin = clampNumber(parsed.workMin, 1, 120, p.workMin);
+                        p.breakMin = clampNumber(parsed.breakMin, 1, 60, p.breakMin);
+                        p.longMin = clampNumber(parsed.longMin, 1, 60, p.longMin);
+                        p.autoStart = parsed.autoStart !== false;
+                        p.today = typeof parsed.today === 'string' ? parsed.today : '';
+                        p.completedToday = clampNumber(parsed.completedToday, 0, 9999, 0);
+                        p.workCycle = clampNumber(parsed.workCycle, 0, 9999, 0);
+                        p.phase = ['work', 'break', 'long'].includes(parsed.phase) ? parsed.phase : 'work';
+                    }
+                } catch (e) { console.warn('ポモドーロ設定の読み込みに失敗しました', e); }
+                rolloverPomodoroToday();
+                state.pomodoro.running = false;
+                state.pomodoro.engaged = false;
+                state.pomodoro.remaining = pomodoroPhaseMinutes(state.pomodoro.phase) * 60;
+            }
+
+            // --- アラーム音 & 通知 ---
+            let alarmCtx = null;
+            function primeAlarmAudio() {
+                try {
+                    const ACTX = window.AudioContext || window.webkitAudioContext;
+                    if (!ACTX) return;
+                    if (!alarmCtx) alarmCtx = new ACTX();
+                    if (alarmCtx.state === 'suspended') alarmCtx.resume();
+                } catch (e) { /* 音声が使えない環境では無視 */ }
+            }
+            function playAlarm() {
+                try {
+                    primeAlarmAudio();
+                    if (!alarmCtx) return;
+                    const start = alarmCtx.currentTime + 0.05;
+                    [0, 0.3, 0.6].forEach((offset, i) => {
+                        const osc = alarmCtx.createOscillator();
+                        const gain = alarmCtx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.value = (i === 2) ? 1174 : 880;
+                        gain.gain.setValueAtTime(0.0001, start + offset);
+                        gain.gain.exponentialRampToValueAtTime(0.3, start + offset + 0.02);
+                        gain.gain.exponentialRampToValueAtTime(0.0001, start + offset + 0.22);
+                        osc.connect(gain);
+                        gain.connect(alarmCtx.destination);
+                        osc.start(start + offset);
+                        osc.stop(start + offset + 0.25);
+                    });
+                } catch (e) { /* 再生失敗は無視 */ }
+            }
+            function requestNotifyPermission() {
+                try {
+                    if ('Notification' in window && Notification.permission === 'default') {
+                        Notification.requestPermission();
+                    }
+                } catch (e) { /* 通知が使えない環境では無視 */ }
+            }
+            function notifyProductivity(title, body) {
+                try {
+                    if ('Notification' in window && Notification.permission === 'granted') {
+                        new Notification(title, { body: body });
+                    }
+                } catch (e) { /* 通知失敗は無視 */ }
+            }
+
+            // --- カレンダー ---
+            function renderCalendar() {
+                const view = state.calendarView;
+                document.getElementById('calMonthLabel').innerText = `${view.year}年${view.month + 1}月`;
+                const grid = document.getElementById('calendarGrid');
+                grid.innerHTML = '';
+                const firstDow = new Date(view.year, view.month, 1).getDay();
+                const daysInMonth = new Date(view.year, view.month + 1, 0).getDate();
+                const todayKey = toDateKey(new Date());
+                const eventCounts = {};
+                state.calendarEvents.forEach(ev => {
+                    eventCounts[ev.date] = (eventCounts[ev.date] || 0) + 1;
+                });
+                for (let i = 0; i < firstDow; i++) {
+                    grid.appendChild(document.createElement('div'));
+                }
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const key = `${view.year}-${pad2(view.month + 1)}-${pad2(d)}`;
+                    const isToday = key === todayKey;
+                    const isSelected = key === state.calendarSelectedDate;
+                    const cell = document.createElement('button');
+                    let classes = 'h-10 rounded-lg text-sm font-medium flex items-center justify-center transition relative border';
+                    if (isSelected) {
+                        classes += ' bg-blue-600 text-white border-blue-600 shadow-sm';
+                    } else {
+                        classes += ' border-transparent hover:bg-slate-100 text-slate-700';
+                        if (isToday) classes += ' ring-1 ring-inset ring-blue-400 text-blue-600 font-bold';
+                    }
+                    cell.className = classes;
+                    let inner = String(d);
+                    if (eventCounts[key]) {
+                        inner += `<span class="absolute bottom-1 w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-blue-500'}"></span>`;
+                    }
+                    cell.innerHTML = inner;
+                    cell.addEventListener('click', () => {
+                        state.calendarSelectedDate = key;
+                        renderCalendar();
+                        renderCalendarEvents();
+                    });
+                    grid.appendChild(cell);
+                }
+            }
+
+            function renderCalendarEvents() {
+                const selected = state.calendarSelectedDate;
+                const match = selected.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (match) {
+                    const [, y, m, d] = match.map(Number);
+                    const weekday = CAL_WEEKDAYS_JP[new Date(y, m - 1, d).getDay()];
+                    document.getElementById('calSelectedLabel').innerText = `${m}月${d}日 (${weekday})`;
+                }
+                const events = state.calendarEvents
+                    .filter(ev => ev.date === selected)
+                    .sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
+                const list = document.getElementById('calEventList');
+                document.getElementById('calEventCount').innerText = events.length ? `${events.length}件の予定` : '';
+                if (!events.length) {
+                    list.innerHTML = `<p class="text-xs text-slate-400 py-3 text-center"><i class="fa-regular fa-calendar text-base block mb-1"></i>この日の予定はありません</p>`;
+                } else {
+                    list.innerHTML = events.map(ev => `
+                        <div class="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                            <span class="text-xs font-mono font-semibold text-blue-600 shrink-0">${ev.time ? escapeHtml(ev.time) : '終日'}</span>
+                            <span class="text-sm text-slate-700 flex-1 truncate">${escapeHtml(ev.title)}</span>
+                            <button data-event-id="${ev.id}" class="cal-delete-btn p-1.5 rounded-md text-rose-400 hover:text-rose-500 hover:bg-rose-50 transition" title="予定を削除">
+                                <i class="fa-solid fa-trash-can text-xs"></i>
+                            </button>
+                        </div>`).join('');
+                    list.querySelectorAll('.cal-delete-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            const id = btn.dataset.eventId;
+                            state.calendarEvents = state.calendarEvents.filter(ev => ev.id !== id);
+                            saveCalendarEvents();
+                            renderCalendar();
+                            renderCalendarEvents();
+                        });
+                    });
+                }
+            }
+
+            function addCalendarEvent() {
+                const titleInput = document.getElementById('calEventTitle');
+                const timeInput = document.getElementById('calEventTime');
+                const title = titleInput.value.trim();
+                if (!title) {
+                    titleInput.focus();
+                    return;
+                }
+                if (!state.calendarSelectedDate) state.calendarSelectedDate = toDateKey(new Date());
+                state.calendarEvents.push({
+                    id: makeId(),
+                    date: state.calendarSelectedDate,
+                    time: timeInput.value || '',
+                    title: title
+                });
+                saveCalendarEvents();
+                titleInput.value = '';
+                timeInput.value = '';
+                renderCalendar();
+                renderCalendarEvents();
+            }
+
+            function openCalendarModal() {
+                const now = new Date();
+                if (!state.calendarSelectedDate) state.calendarSelectedDate = toDateKey(now);
+                const match = state.calendarSelectedDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (match) {
+                    state.calendarView = { year: Number(match[1]), month: Number(match[2]) - 1 };
+                } else {
+                    state.calendarView = { year: now.getFullYear(), month: now.getMonth() };
+                }
+                renderCalendar();
+                renderCalendarEvents();
+                document.getElementById('calendarModal').classList.remove('hidden');
+            }
+            function closeCalendarModal() {
+                document.getElementById('calendarModal').classList.add('hidden');
+            }
+
+            // --- ポモドーロ ---
+            function pomodoroPhaseMinutes(phase) {
+                const p = state.pomodoro;
+                if (phase === 'break') return p.breakMin;
+                if (phase === 'long') return p.longMin;
+                return p.workMin;
+            }
+            function pomodoroPhaseMeta(phase) {
+                if (phase === 'break') return { label: '休憩', dot: 'bg-emerald-500', icon: 'fa-mug-hot text-emerald-500' };
+                if (phase === 'long') return { label: '長い休憩', dot: 'bg-amber-500', icon: 'fa-mug-hot text-amber-500' };
+                return { label: '集中 (作業)', dot: 'bg-rose-500', icon: 'fa-bullseye text-rose-500' };
+            }
+            function setPomodoroPhase(phase) {
+                const p = state.pomodoro;
+                p.phase = phase;
+                p.remaining = pomodoroPhaseMinutes(phase) * 60;
+            }
+            function updatePomodoroUi() {
+                const p = state.pomodoro;
+                const meta = pomodoroPhaseMeta(p.phase);
+                document.getElementById('pomoDisplay').innerText = formatTime(p.remaining);
+                document.getElementById('pomoPhaseLabel').innerText = meta.label;
+                document.getElementById('pomoPhaseDot').className = 'w-2.5 h-2.5 rounded-full ' + meta.dot;
+                document.getElementById('pomoCountLabel').innerText = `本日の集中: ${p.completedToday} 回（4回ごとに長い休憩）`;
+                const startBtn = document.getElementById('pomoStartBtn');
+                if (p.running) {
+                    startBtn.innerHTML = '<i class="fa-solid fa-pause text-xs"></i><span>一時停止</span>';
+                } else if (p.engaged && p.remaining > 0) {
+                    startBtn.innerHTML = '<i class="fa-solid fa-play text-xs"></i><span>再開</span>';
+                } else {
+                    startBtn.innerHTML = '<i class="fa-solid fa-play text-xs"></i><span>開始</span>';
+                }
+            }
+            function setPomodoroPhaseSetting(inputId, min, max, settingKey) {
+                const p = state.pomodoro;
+                const phaseForSetting = { workMin: 'work', breakMin: 'break', longMin: 'long' }[settingKey];
+                const prevValue = p[settingKey];
+                const input = document.getElementById(inputId);
+                p[settingKey] = clampNumber(input.value, min, max, prevValue);
+                input.value = p[settingKey];
+                // 停止中でフェーズの長さをまだ一度も進めていない場合は残り時間を追従させる
+                if (!p.running && p.remaining === prevValue * 60 && p.phase === phaseForSetting) {
+                    p.remaining = p[settingKey] * 60;
+                }
+                savePomodoroData();
+                updatePomodoroUi();
+                updateTimerChip();
+                updatePageTitle();
+            }
+            function togglePomodoro() {
+                const p = state.pomodoro;
+                primeAlarmAudio();
+                requestNotifyPermission();
+                if (p.running) {
+                    p.running = false;
+                } else {
+                    if (p.remaining <= 0) setPomodoroPhase(p.phase);
+                    p.running = true;
+                    p.engaged = true;
+                }
+                updatePomodoroUi();
+                updateTimerChip();
+                updatePageTitle();
+            }
+            function resetPomodoro() {
+                const p = state.pomodoro;
+                p.running = false;
+                setPomodoroPhase(p.phase);
+                p.engaged = false;
+                updatePomodoroUi();
+                updateTimerChip();
+                updatePageTitle();
+            }
+            // フェーズを完了した（またはスキップした）扱いにして次へ進める
+            function advancePomodoro(countCompletion) {
+                const p = state.pomodoro;
+                const finishedPhase = p.phase;
+                let nextPhase = 'work';
+                if (finishedPhase === 'work') {
+                    if (countCompletion) {
+                        p.completedToday += 1;
+                        p.workCycle += 1;
+                    } else {
+                        p.workCycle += 1;
+                    }
+                    nextPhase = (p.workCycle % 4 === 0) ? 'long' : 'break';
+                }
+                p.workCycle = ((p.workCycle % 4) + 4) % 4;
+                savePomodoroData();
+                setPomodoroPhase(nextPhase);
+                const finishingLabel = pomodoroPhaseMeta(finishedPhase).label;
+                const nextLabel = pomodoroPhaseMeta(nextPhase).label;
+                if (countCompletion) {
+                    playAlarm();
+                    notifyProductivity('ポモドーロ', `${finishingLabel}が終了しました。次は「${nextLabel}」です。`);
+                }
+            }
+            function skipPomodoro() {
+                const p = state.pomodoro;
+                advancePomodoro(false);
+                p.running = false;
+                updatePomodoroUi();
+                updateTimerChip();
+                updatePageTitle();
+            }
+
+            // --- 単発タイマー ---
+            function updateTimerUi() {
+                const t = state.timer;
+                document.getElementById('timerDisplay').innerText = formatTime(t.remaining);
+                const startBtn = document.getElementById('timerStartBtn');
+                if (t.running) {
+                    startBtn.innerHTML = '<i class="fa-solid fa-pause text-xs"></i><span>一時停止</span>';
+                } else if (t.engaged && t.remaining > 0) {
+                    startBtn.innerHTML = '<i class="fa-solid fa-play text-xs"></i><span>再開</span>';
+                } else {
+                    startBtn.innerHTML = '<i class="fa-solid fa-play text-xs"></i><span>開始</span>';
+                }
+            }
+            function readTimerInputs() {
+                const minutes = clampNumber(document.getElementById('timerMinInput').value, 0, 999, 0);
+                const seconds = clampNumber(document.getElementById('timerSecInput').value, 0, 59, 0);
+                document.getElementById('timerMinInput').value = minutes;
+                document.getElementById('timerSecInput').value = seconds;
+                return minutes * 60 + seconds;
+            }
+            function toggleTimer() {
+                const t = state.timer;
+                primeAlarmAudio();
+                requestNotifyPermission();
+                if (t.running) {
+                    t.running = false;
+                } else {
+                    if (t.remaining <= 0 || !t.engaged) {
+                        const total = readTimerInputs();
+                        if (total <= 0) return;
+                        t.total = total;
+                        t.remaining = total;
+                    }
+                    t.running = true;
+                    t.engaged = true;
+                }
+                updateTimerUi();
+                updateTimerChip();
+                updatePageTitle();
+            }
+            function resetTimer() {
+                const t = state.timer;
+                t.running = false;
+                t.engaged = false;
+                t.remaining = 0;
+                t.total = 0;
+                updateTimerUi();
+                updateTimerChip();
+                updatePageTitle();
+            }
+            function applyTimerPreset(totalSeconds) {
+                const t = state.timer;
+                t.running = false;
+                t.engaged = false;
+                t.remaining = totalSeconds;
+                t.total = totalSeconds;
+                document.getElementById('timerMinInput').value = Math.floor(totalSeconds / 60);
+                document.getElementById('timerSecInput').value = '0';
+                updateTimerUi();
+                updateTimerChip();
+                updatePageTitle();
+            }
+
+            // --- 実行中タイマーチップ & ページタイトル ---
+            function primaryCountdown() {
+                if (state.pomodoro.engaged) return { kind: 'pomodoro' };
+                if (state.timer.engaged) return { kind: 'timer' };
+                return null;
+            }
+            function updateTimerChip() {
+                const chip = document.getElementById('timerChip');
+                const cd = primaryCountdown();
+                if (!cd) {
+                    chip.classList.add('hidden');
+                    chip.classList.remove('flex');
+                    return;
+                }
+                chip.classList.remove('hidden');
+                chip.classList.add('flex');
+                const isPomo = cd.kind === 'pomodoro';
+                const src = isPomo ? state.pomodoro : state.timer;
+                document.getElementById('timerChipTime').innerText = formatTime(src.remaining);
+                const icon = document.getElementById('timerChipIcon');
+                if (src.remaining <= 0 && !src.running) {
+                    icon.className = 'fa-solid fa-bell text-sm text-amber-500 animate-pulse';
+                } else if (isPomo) {
+                    icon.className = 'fa-solid ' + pomodoroPhaseMeta(state.pomodoro.phase).icon + ' text-sm';
+                } else {
+                    icon.className = 'fa-solid fa-stopwatch text-sm text-sky-500';
+                }
+                document.getElementById('timerChipPauseIcon').className =
+                    'fa-solid ' + (src.running ? 'fa-pause' : 'fa-play') + ' text-[10px]';
+            }
+            function updatePageTitle() {
+                const cd = primaryCountdown();
+                if (cd) {
+                    const isPomo = cd.kind === 'pomodoro';
+                    const src = isPomo ? state.pomodoro : state.timer;
+                    if (src.running) {
+                        const label = isPomo ? pomodoroPhaseMeta(src.phase).label : 'タイマー';
+                        document.title = `${formatTime(src.remaining)} ${label} | ${BASE_PAGE_TITLE}`;
+                        return;
+                    }
+                }
+                document.title = BASE_PAGE_TITLE;
+            }
+            function togglePrimaryCountdown() {
+                const cd = primaryCountdown();
+                if (!cd) return;
+                if (cd.kind === 'pomodoro') togglePomodoro();
+                else toggleTimer();
+            }
+            function openCountdownModal() {
+                const cd = primaryCountdown();
+                document.getElementById('pomodoroModal').classList.remove('hidden');
+                selectProdTab(cd && cd.kind === 'timer' ? 'timer' : 'pomodoro');
+                updatePomodoroUi();
+                updateTimerUi();
+            }
+            function closePomodoroModal() {
+                document.getElementById('pomodoroModal').classList.add('hidden');
+            }
+
+            // --- 毎秒の共通ティック ---
+            let productivityTickReference = null;
+            function productivityTick() {
+                const p = state.pomodoro;
+                const t = state.timer;
+                rolloverPomodoroToday();
+                if (p.running) {
+                    p.remaining -= 1;
+                    if (p.remaining <= 0) {
+                        p.remaining = 0;
+                        advancePomodoro(true);
+                        p.running = p.autoStart;
+                    }
+                    updatePomodoroUi();
+                }
+                if (t.running) {
+                    t.remaining -= 1;
+                    if (t.remaining <= 0) {
+                        t.remaining = 0;
+                        t.running = false;
+                        playAlarm();
+                        notifyProductivity('タイマー', 'タイマーが終了しました。');
+                    }
+                    updateTimerUi();
+                }
+                updateTimerChip();
+                updatePageTitle();
+            }
+
+            // --- モーダルのタブ切替 ---
+            function selectProdTab(pane) {
+                document.querySelectorAll('.prod-tab').forEach(btn => {
+                    const isActive = btn.dataset.pane === pane;
+                    btn.classList.toggle('active', isActive);
+                    btn.classList.toggle('bg-blue-600', isActive);
+                    btn.classList.toggle('text-white', isActive);
+                    btn.classList.toggle('shadow-sm', isActive);
+                    btn.classList.toggle('bg-slate-100', !isActive);
+                    btn.classList.toggle('text-slate-600', !isActive);
+                    btn.classList.toggle('hover:bg-slate-200', !isActive);
+                });
+                document.getElementById('pomoPane').classList.toggle('hidden', pane !== 'pomodoro');
+                document.getElementById('timerPane').classList.toggle('hidden', pane !== 'timer');
+                document.getElementById('timerPane').classList.toggle('flex', pane === 'timer');
+            }
+
+            // --- 生産性ツールのイベント設定 & 起動 ---
+            function initProductivityTools() {
+                loadProductivityData();
+                const p = state.pomodoro;
+                document.getElementById('pomoWorkMin').value = p.workMin;
+                document.getElementById('pomoBreakMin').value = p.breakMin;
+                document.getElementById('pomoLongMin').value = p.longMin;
+                document.getElementById('pomoAutoStart').checked = p.autoStart;
+                updatePomodoroUi();
+                updateTimerUi();
+                updateTimerChip();
+                updatePageTitle();
+
+                // カレンダー
+                document.getElementById('calendarBtn').addEventListener('click', openCalendarModal);
+                document.getElementById('closeCalendarModalBtn').addEventListener('click', closeCalendarModal);
+                document.getElementById('calendarModal').addEventListener('click', (e) => {
+                    if (e.target === e.currentTarget) closeCalendarModal();
+                });
+                document.getElementById('calPrevBtn').addEventListener('click', () => {
+                    state.calendarView.month -= 1;
+                    if (state.calendarView.month < 0) {
+                        state.calendarView.month = 11;
+                        state.calendarView.year -= 1;
+                    }
+                    renderCalendar();
+                });
+                document.getElementById('calNextBtn').addEventListener('click', () => {
+                    state.calendarView.month += 1;
+                    if (state.calendarView.month > 11) {
+                        state.calendarView.month = 0;
+                        state.calendarView.year += 1;
+                    }
+                    renderCalendar();
+                });
+                document.getElementById('calTodayBtn').addEventListener('click', () => {
+                    const now = new Date();
+                    state.calendarView = { year: now.getFullYear(), month: now.getMonth() };
+                    state.calendarSelectedDate = toDateKey(now);
+                    renderCalendar();
+                    renderCalendarEvents();
+                });
+                document.getElementById('calAddEventBtn').addEventListener('click', addCalendarEvent);
+                document.getElementById('calEventTitle').addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') addCalendarEvent();
+                });
+
+                // ポモドーロ & タイマー
+                document.getElementById('pomodoroBtn').addEventListener('click', () => {
+                    document.getElementById('pomodoroModal').classList.remove('hidden');
+                    updatePomodoroUi();
+                    updateTimerUi();
+                });
+                document.getElementById('closePomodoroModalBtn').addEventListener('click', closePomodoroModal);
+                document.getElementById('pomodoroModal').addEventListener('click', (e) => {
+                    if (e.target === e.currentTarget) closePomodoroModal();
+                });
+                document.getElementById('pomoTabBtn').addEventListener('click', () => selectProdTab('pomodoro'));
+                document.getElementById('timerTabBtn').addEventListener('click', () => selectProdTab('timer'));
+                document.getElementById('pomoStartBtn').addEventListener('click', togglePomodoro);
+                document.getElementById('pomoResetBtn').addEventListener('click', resetPomodoro);
+                document.getElementById('pomoSkipBtn').addEventListener('click', skipPomodoro);
+                document.getElementById('pomoWorkMin').addEventListener('change', () => setPomodoroPhaseSetting('pomoWorkMin', 1, 120, 'workMin'));
+                document.getElementById('pomoBreakMin').addEventListener('change', () => setPomodoroPhaseSetting('pomoBreakMin', 1, 60, 'breakMin'));
+                document.getElementById('pomoLongMin').addEventListener('change', () => setPomodoroPhaseSetting('pomoLongMin', 1, 60, 'longMin'));
+                document.getElementById('pomoAutoStart').addEventListener('change', (e) => {
+                    state.pomodoro.autoStart = e.target.checked;
+                    savePomodoroData();
+                });
+                document.getElementById('timerStartBtn').addEventListener('click', toggleTimer);
+                document.getElementById('timerResetBtn').addEventListener('click', resetTimer);
+                document.querySelectorAll('.timer-preset').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        applyTimerPreset(parseInt(btn.dataset.presetMin, 10) * 60);
+                    });
+                });
+
+                // 実行中チップ
+                document.getElementById('timerChipPauseBtn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    togglePrimaryCountdown();
+                });
+                document.getElementById('timerChipCloseBtn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const chip = document.getElementById('timerChip');
+                    chip.classList.add('hidden');
+                    chip.classList.remove('flex');
+                });
+                document.getElementById('timerChip').addEventListener('click', openCountdownModal);
+
+                // 毎秒の共通ティック
+                productivityTickReference = setInterval(productivityTick, 1000);
+            }
+
             // --- アプリケーション起動 ---
             applyUiMode(localStorage.getItem(UI_MODE_KEY) || 'light', false);
             setUiHidden(localStorage.getItem(UI_HIDDEN_KEY) === 'true', false);
             resizeCanvas();
             loadAllNotesFromStorage();
+            initProductivityTools();
         };
     </script>
 </body>

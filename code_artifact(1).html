@@ -152,12 +152,17 @@
             <button id="prevPageBtn" class="p-2 hover:bg-white rounded-lg text-slate-600 transition disabled:opacity-30 disabled:hover:bg-transparent" title="前のページ">
                 <i class="fa-solid fa-chevron-left text-sm"></i>
             </button>
-            <span id="pageIndicator" class="text-xs font-semibold text-slate-600 px-2">1 / 1</span>
+            <span id="pageIndicator" class="text-xs font-semibold text-slate-600 px-2 inline-block max-w-[12rem] truncate">1 / 1</span>
             <button id="nextPageBtn" class="p-2 hover:bg-white rounded-lg text-slate-600 transition disabled:opacity-30 disabled:hover:bg-transparent" title="次のページ">
                 <i class="fa-solid fa-chevron-right text-sm"></i>
             </button>
             <button id="addPageBtn" class="p-2 hover:bg-blue-500 hover:text-white rounded-lg text-slate-600 transition" title="新規ページ追加">
                 <i class="fa-solid fa-plus text-sm"></i>
+            </button>
+            <div class="h-5 w-px bg-slate-300/70"></div>
+            <button id="chapterToggleBtn" class="p-2 hover:bg-white rounded-lg text-slate-600 transition" title="章アウトライン">
+                <i class="fa-solid fa-list-ol text-sm"></i>
+                <span class="hidden lg:inline text-xs font-semibold ml-1">章</span>
             </button>
         </div>
 
@@ -333,6 +338,32 @@
                     <i class="fa-solid fa-xmark text-xs"></i>
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- 章アウトラインパネル（ノート内の章構造） -->
+    <div id="chapterPanel" class="theme-panel hidden fixed right-4 top-16 z-40 w-80 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200/80 overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+            <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid fa-list-ol text-blue-600"></i>
+                <span>章アウトライン</span>
+            </h3>
+            <button id="closeChapterPanelBtn" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg transition">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div id="chapterListPanel" class="max-h-64 overflow-y-auto p-3 flex flex-col gap-1">
+            <!-- JSで動的に描画 -->
+        </div>
+        <div class="p-3 border-t border-slate-100 bg-slate-50 flex flex-col gap-2">
+            <button id="addChapterHereBtn" class="text-left text-xs font-medium text-slate-600 hover:bg-white border border-slate-200 rounded-lg px-3 py-2 transition flex items-center gap-2" title="現在のページを章の先頭にする">
+                <i class="fa-solid fa-bookmark"></i>
+                <span>このページから章を開始</span>
+            </button>
+            <button id="addChapterNewPageBtn" class="text-left text-xs font-medium text-slate-600 hover:bg-white border border-slate-200 rounded-lg px-3 py-2 transition flex items-center gap-2" title="末尾に新規ページを追加して章の先頭にする">
+                <i class="fa-solid fa-file-circle-plus"></i>
+                <span>新しいページで章を開始</span>
+            </button>
         </div>
     </div>
 
@@ -568,6 +599,7 @@
                 bgType: 'grid',              // grid, ruled, dots, blank, dark, genko, music, english, tex
                 pages: [],                   // 各ページのCanvasデータURL配列
                 currentPageIndex: 0,
+                chapters: [],                // ノート内の章: [{id, title, startPage}]（startPage昇順）
                 history: [],                 // Undo/Redoスタック
                 historyStep: -1,
                 maxHistory: 20,
@@ -748,6 +780,7 @@
                         bgType: 'grid',
                         pages: [null],
                         currentPageIndex: 0,
+                        chapters: [],
                         parentId: null,
                         updatedAt: Date.now()
                     };
@@ -788,6 +821,7 @@
                     state.notesList[index].bgType = state.bgType;
                     state.notesList[index].pages = state.pages;
                     state.notesList[index].currentPageIndex = state.currentPageIndex;
+                    state.notesList[index].chapters = state.chapters;
                     state.notesList[index].updatedAt = Date.now();
 
                     // 先頭（最新更新）に並び替え
@@ -807,6 +841,7 @@
                 state.bgType = note.bgType || 'grid';
                 state.pages = note.pages && note.pages.length > 0 ? note.pages : [null];
                 state.currentPageIndex = note.currentPageIndex || 0;
+                state.chapters = getValidatedChapters(note, state.pages);
                 if (state.colorIsDefault) updateDrawingColor(getDefaultDrawingColor(), true);
 
                 // 背景UIボタンのアクティブ更新
@@ -829,6 +864,7 @@
                     bgType: bgType,
                     pages: [null],
                     currentPageIndex: 0,
+                    chapters: [],
                     parentId: parentId,
                     updatedAt: Date.now()
                 };
@@ -972,6 +1008,136 @@
                 folder.updatedAt = Date.now();
                 if ((state.modalFolderId || null) === folderId) state.modalFolderId = targetFolderId || null;
                 saveAllNotesToStorage();
+            }
+
+            // --- ノート内の章構造（論文の章・節構成） ---
+            // 章 = 開始ページが決まっている目印。ページ実体は変わらないため削除しても安全
+            function getValidatedChapters(note, pages) {
+                if (!Array.isArray(note.chapters)) return [];
+                const maxPage = pages.length - 1;
+                const seenStarts = new Set();
+                return note.chapters
+                    .filter(c => c && typeof c === 'object' && Number.isInteger(c.startPage) && c.startPage >= 0)
+                    .sort((a, b) => a.startPage - b.startPage)
+                    .filter(c => {
+                        if (c.startPage > maxPage || seenStarts.has(c.startPage)) return false;
+                        seenStarts.add(c.startPage);
+                        return true;
+                    })
+                    .map((c, i) => ({
+                        id: typeof c.id === 'string' && c.id ? c.id : `chapter_${Date.now()}_${i}`,
+                        title: typeof c.title === 'string' && c.title.trim() ? c.title : `第${i + 1}章`,
+                        startPage: c.startPage
+                    }));
+            }
+
+            function sortChapters() {
+                state.chapters.sort((a, b) => a.startPage - b.startPage);
+            }
+
+            function getChapterAt(pageIndex) {
+                let current = null;
+                for (const chapter of state.chapters) {
+                    if (chapter.startPage <= pageIndex) current = chapter;
+                    else break;
+                }
+                return current;
+            }
+
+            function startChapterAt(pageIndex, title) {
+                if (state.chapters.some(c => c.startPage === pageIndex)) {
+                    alert('このページは既に章の先頭です。章名を変更する場合はアウトラインから編集してください。');
+                    return null;
+                }
+                const chapter = {
+                    id: 'chapter_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                    title: (title && title.trim()) || `第${state.chapters.length + 1}章`,
+                    startPage: pageIndex
+                };
+                state.chapters.push(chapter);
+                sortChapters();
+                syncCurrentNoteToMemory();
+                renderChapterPanel();
+                updatePageUI();
+                return chapter;
+            }
+
+            function renameChapter(chapterId, newTitle) {
+                const chapter = state.chapters.find(c => c.id === chapterId);
+                if (!chapter || !newTitle || !newTitle.trim()) return;
+                chapter.title = newTitle.trim();
+                syncCurrentNoteToMemory();
+                renderChapterPanel();
+                updatePageUI();
+            }
+
+            function deleteChapter(chapterId) {
+                // ページは消えず、前の章の範囲へ戻るだけ
+                state.chapters = state.chapters.filter(c => c.id !== chapterId);
+                syncCurrentNoteToMemory();
+                renderChapterPanel();
+                updatePageUI();
+            }
+
+            function renderChapterPanel() {
+                const listEl = document.getElementById('chapterListPanel');
+                listEl.innerHTML = '';
+                sortChapters();
+
+                if (state.chapters.length === 0) {
+                    const emptyEl = document.createElement('p');
+                    emptyEl.className = 'text-center text-xs text-slate-400 py-6';
+                    emptyEl.innerText = '章はまだありません';
+                    listEl.appendChild(emptyEl);
+                    return;
+                }
+
+                const currentChapter = getChapterAt(state.currentPageIndex);
+                state.chapters.forEach((chapter, index) => {
+                    const nextChapter = state.chapters[index + 1];
+                    const lastPage = nextChapter ? nextChapter.startPage - 1 : state.pages.length - 1;
+                    const isCurrent = currentChapter && currentChapter.id === chapter.id;
+
+                    const row = document.createElement('div');
+                    row.className = `group flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition ${isCurrent ? 'bg-blue-50 ring-1 ring-blue-400' : 'hover:bg-slate-100'}`;
+                    row.innerHTML = `
+                        <span class="text-[10px] font-mono text-slate-400 shrink-0">${index + 1}.</span>
+                        <span class="text-sm text-slate-700 truncate flex-1 font-medium">${chapter.title}</span>
+                        <span class="text-[10px] text-slate-400 shrink-0">p.${chapter.startPage + 1}${lastPage > chapter.startPage ? `-${lastPage + 1}` : ''}</span>
+                        <div class="hidden group-hover:flex items-center gap-0.5 shrink-0">
+                            <button class="rename-chapter-btn text-slate-400 hover:text-blue-600 p-1.5 rounded-lg hover:bg-blue-50 transition" title="章名を変更">
+                                <i class="fa-solid fa-pen text-xs"></i>
+                            </button>
+                            <button class="delete-chapter-btn text-rose-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition" title="章を削除（ページは残ります）">
+                                <i class="fa-regular fa-trash-can text-xs"></i>
+                            </button>
+                        </div>
+                    `;
+                    row.addEventListener('click', (e) => {
+                        if (e.target.closest('button')) return;
+                        saveCurrentPageData();
+                        loadPageData(chapter.startPage);
+                    });
+                    row.querySelector('.rename-chapter-btn').addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const newTitle = prompt('章名を入力', chapter.title);
+                        if (newTitle) renameChapter(chapter.id, newTitle);
+                    });
+                    row.querySelector('.delete-chapter-btn').addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        deleteChapter(chapter.id);
+                    });
+                    listEl.appendChild(row);
+                });
+            }
+
+            function openChapterPanel() {
+                renderChapterPanel();
+                document.getElementById('chapterPanel').classList.remove('hidden');
+            }
+
+            function closeChapterPanel() {
+                document.getElementById('chapterPanel').classList.add('hidden');
             }
 
             // --- キャンバスサイズの最適化 ---
@@ -1869,9 +2035,14 @@
             }
 
             function updatePageUI() {
-                document.getElementById('pageIndicator').innerText = `${state.currentPageIndex + 1} / ${state.pages.length}`;
+                const currentChapter = getChapterAt(state.currentPageIndex);
+                document.getElementById('pageIndicator').innerText = `${state.currentPageIndex + 1} / ${state.pages.length}${currentChapter ? ` · ${currentChapter.title}` : ''}`;
                 document.getElementById('prevPageBtn').disabled = (state.currentPageIndex === 0);
                 document.getElementById('nextPageBtn').disabled = (state.currentPageIndex === state.pages.length - 1);
+                // 章パネルが開いていれば、現在地のハイライトを更新
+                if (!document.getElementById('chapterPanel').classList.contains('hidden')) {
+                    renderChapterPanel();
+                }
             }
 
             // --- ノート一覧UI描画（フォルダー階層ブラウザ） ---
@@ -2163,6 +2334,7 @@
                         bgType: VALID_BACKGROUNDS.has(note.bgType) ? note.bgType : 'grid',
                         pages,
                         currentPageIndex: Math.max(0, Math.min(requestedIndex, pages.length - 1)),
+                        chapters: getValidatedChapters(note, pages),
                         parentId: typeof note.parentId === 'string' && validFolderIds.has(note.parentId) ? note.parentId : null,
                         updatedAt: Number.isFinite(note.updatedAt) ? note.updatedAt : Date.now()
                     };
@@ -2429,6 +2601,28 @@
                 saveCurrentPageData();
                 state.pages.push(null);
                 loadPageData(state.pages.length - 1);
+            });
+
+            // 章アウトライン
+            document.getElementById('chapterToggleBtn').addEventListener('click', () => {
+                const panel = document.getElementById('chapterPanel');
+                if (panel.classList.contains('hidden')) openChapterPanel();
+                else closeChapterPanel();
+            });
+            document.getElementById('closeChapterPanelBtn').addEventListener('click', closeChapterPanel);
+            document.getElementById('addChapterHereBtn').addEventListener('click', () => {
+                const title = prompt('章名を入力', `第${state.chapters.length + 1}章`);
+                if (title === null) return;
+                startChapterAt(state.currentPageIndex, title);
+            });
+            document.getElementById('addChapterNewPageBtn').addEventListener('click', () => {
+                const title = prompt('章名を入力', `第${state.chapters.length + 1}章`);
+                if (title === null) return;
+                saveCurrentPageData();
+                state.pages.push(null);
+                const newPageIndex = state.pages.length - 1;
+                startChapterAt(newPageIndex, title);
+                loadPageData(newPageIndex);
             });
 
             // 画像ダウンロード
